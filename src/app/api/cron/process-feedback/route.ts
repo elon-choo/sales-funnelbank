@@ -1,16 +1,21 @@
 // src/app/api/cron/process-feedback/route.ts
-// Vercel Cron 핸들러: 피드백 생성 작업 처리
-// 1분마다 실행되어 pending 작업을 pick하고 Edge Function에 위임
+// Vercel Cron 핸들러: Fallback + Cleanup 전용
+// 5분마다 실행 - 주 처리는 /api/lms/feedback-processor에서 즉시 수행
+// 이 Cron은 다음 역할만 담당:
+// 1. 좀비 작업 복구 (5분 이상 processing 상태)
+// 2. 누락된 pending 작업 처리 (edge case 대응)
+// 3. 실패한 작업 재시도 트리거
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // Vercel Cron config (vercel.json에도 설정 필요)
 export const runtime = 'nodejs';
-export const maxDuration = 60; // 최대 60초 (Vercel Cron 제한)
+export const maxDuration = 60;
 
-const CONCURRENT_LIMIT = 5; // 동시 처리 작업 수
-const EDGE_FUNCTION_URL = process.env.SUPABASE_EDGE_FUNCTION_URL || '';
+const MAX_CONCURRENT_JOBS = 10;
 const CRON_SECRET = process.env.CRON_SECRET_FEEDBACK || '';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || CRON_SECRET;
 
 // 프리미엄 사용자 여부 확인 (시스템 설정 또는 프로필 티어 기반)
 async function checkPremiumStatus(
@@ -63,145 +68,139 @@ async function checkPremiumStatus(
 }
 
 // GET /api/cron/process-feedback
+// Fallback + Cleanup 전용 (5분마다 실행)
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
-  // Cron 인증 확인 (Vercel Cron에서 호출 시)
+  // Cron 인증 확인
   const authHeader = request.headers.get('authorization');
   const cronSecret = request.headers.get('x-cron-secret');
-
-  // 개발 환경 또는 Cron 시크릿 일치 확인
   const isDev = process.env.NODE_ENV === 'development';
   const isValidCron = cronSecret === CRON_SECRET || authHeader === `Bearer ${CRON_SECRET}`;
 
   if (!isDev && !isValidCron) {
     console.warn('[Cron Auth] Invalid cron secret');
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 }
-    );
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const supabase = createAdminClient();
+    const stats = {
+      recovered: 0,
+      triggered: 0,
+      alreadyProcessing: 0,
+    };
 
+    // ============================================================
     // 1. 좀비 작업 복구 (5분 이상 processing 상태)
-    const { data: recoveredCount } = await supabase.rpc('recover_zombie_jobs');
-    if (recoveredCount && recoveredCount > 0) {
-      console.log(`[Cron] Recovered ${recoveredCount} zombie jobs`);
-    }
+    // ============================================================
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: zombieJobs } = await supabase
+      .from('feedback_jobs')
+      .select('id, attempts')
+      .eq('status', 'processing')
+      .lt('started_at', fiveMinutesAgo);
 
-    // 2. pending 작업 pick (FOR UPDATE SKIP LOCKED)
-    const { data: jobs, error: pickError } = await supabase.rpc('pick_next_feedback_jobs', {
-      p_limit: CONCURRENT_LIMIT,
-    });
-
-    if (pickError) {
-      console.error('[Cron] Failed to pick jobs:', pickError);
-      return NextResponse.json(
-        { success: false, error: 'Failed to pick jobs', details: pickError.message },
-        { status: 500 }
-      );
-    }
-
-    if (!jobs || jobs.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          message: 'No pending jobs',
-          picked: 0,
-          elapsedMs: Date.now() - startTime,
-        },
-      });
-    }
-
-    console.log(`[Cron] Picked ${jobs.length} jobs:`, jobs.map((j: { job_id: string }) => j.job_id));
-
-    // 3. Edge Function에 작업 위임 (병렬 처리)
-    const results = await Promise.allSettled(
-      jobs.map(async (job: { job_id: string; job_assignment_id: string; job_attempts: number }) => {
-        const edgeUrl = `${EDGE_FUNCTION_URL}/generate-feedback`;
-
-        try {
-          // 프리미엄 사용자 여부 확인
-          const isPremium = await checkPremiumStatus(supabase, job.job_assignment_id);
-
-          const response = await fetch(edgeUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-cron-secret': CRON_SECRET,
-            },
-            body: JSON.stringify({
-              jobId: job.job_id,
-              isPremium,
-              cronSecret: CRON_SECRET,
-            }),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Edge Function error: ${response.status} ${errorText}`);
-          }
-
-          const result = await response.json();
-          return { jobId: job.job_id, success: true, result };
-        } catch (error) {
-          console.error(`[Cron] Edge Function call failed for job ${job.job_id}:`, error);
-
-          // 실패 시 작업 상태를 pending으로 되돌리거나 failed로 변경
-          if (job.job_attempts >= 3) {
-            await supabase
-              .from('feedback_jobs')
-              .update({
-                status: 'failed',
-                error_message: error instanceof Error ? error.message : 'Unknown error',
-                completed_at: new Date().toISOString(),
-              })
-              .eq('id', job.job_id);
-          } else {
-            await supabase
-              .from('feedback_jobs')
-              .update({
-                status: 'pending',
-                started_at: null,
-                error_message: error instanceof Error ? error.message : 'Unknown error',
-              })
-              .eq('id', job.job_id);
-          }
-
-          return { jobId: job.job_id, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    if (zombieJobs && zombieJobs.length > 0) {
+      for (const zombie of zombieJobs) {
+        if ((zombie.attempts || 0) >= 3) {
+          // 최대 재시도 초과: failed로 변경
+          await supabase
+            .from('feedback_jobs')
+            .update({
+              status: 'failed',
+              error_message: 'Zombie job: processing timeout (5min)',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', zombie.id);
+        } else {
+          // 재시도 가능: pending으로 복구
+          await supabase
+            .from('feedback_jobs')
+            .update({
+              status: 'pending',
+              started_at: null,
+              error_message: 'Recovered from zombie state',
+            })
+            .eq('id', zombie.id);
         }
-      })
-    );
+        stats.recovered++;
+      }
+      console.log(`[Cron Fallback] Recovered ${stats.recovered} zombie jobs`);
+    }
 
-    // 4. 결과 집계
-    const successful = results.filter(
-      (r): r is PromiseFulfilledResult<{ jobId: string; success: boolean; result: unknown }> =>
-        r.status === 'fulfilled' && r.value.success
-    );
-    const failed = results.filter(
-      (r): r is PromiseFulfilledResult<{ jobId: string; success: boolean; error: string }> =>
-        r.status === 'fulfilled' && !r.value.success
-    );
+    // ============================================================
+    // 2. 현재 처리 중인 작업 수 확인
+    // ============================================================
+    const { count: processingCount } = await supabase
+      .from('feedback_jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'processing');
+
+    const currentProcessing = processingCount || 0;
+    const availableSlots = MAX_CONCURRENT_JOBS - currentProcessing;
+
+    if (availableSlots <= 0) {
+      stats.alreadyProcessing = currentProcessing;
+      console.log(`[Cron Fallback] All slots occupied (${currentProcessing}/${MAX_CONCURRENT_JOBS})`);
+    }
+
+    // ============================================================
+    // 3. 누락된 pending 작업 처리 트리거 (Fallback)
+    // ============================================================
+    if (availableSlots > 0) {
+      const { data: pendingJobs } = await supabase
+        .from('feedback_jobs')
+        .select('id, assignment_id')
+        .eq('status', 'pending')
+        .order('priority', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(availableSlots);
+
+      if (pendingJobs && pendingJobs.length > 0) {
+        const baseUrl = process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+        // 병렬로 processor 트리거
+        await Promise.allSettled(
+          pendingJobs.map(async (job) => {
+            const isPremium = await checkPremiumStatus(supabase, job.assignment_id);
+
+            return fetch(`${baseUrl}/api/lms/feedback-processor`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-internal-secret': INTERNAL_API_SECRET,
+              },
+              body: JSON.stringify({
+                jobId: job.id,
+                isPremium,
+              }),
+            });
+          })
+        );
+
+        stats.triggered = pendingJobs.length;
+        console.log(`[Cron Fallback] Triggered ${stats.triggered} pending jobs`);
+      }
+    }
 
     const elapsedMs = Date.now() - startTime;
-
-    console.log(`[Cron] Completed: ${successful.length} success, ${failed.length} failed, ${elapsedMs}ms`);
 
     return NextResponse.json({
       success: true,
       data: {
-        picked: jobs.length,
-        successful: successful.length,
-        failed: failed.length,
-        recovered: recoveredCount || 0,
+        mode: 'fallback',
+        recovered: stats.recovered,
+        triggered: stats.triggered,
+        processing: currentProcessing,
+        maxConcurrent: MAX_CONCURRENT_JOBS,
         elapsedMs,
-        results: results.map((r) => (r.status === 'fulfilled' ? r.value : { error: 'rejected' })),
       },
     });
   } catch (error) {
-    console.error('[Cron] Unexpected error:', error);
+    console.error('[Cron Fallback] Unexpected error:', error);
     return NextResponse.json(
       {
         success: false,

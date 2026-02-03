@@ -203,22 +203,54 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 제출된 과제인 경우 피드백 작업 큐에 추가
+      // 제출된 과제인 경우 피드백 작업 큐에 추가 + 즉시 처리 트리거
       if (!isDraft) {
-        const { error: jobError } = await supabase
+        // 1. 피드백 작업 큐에 추가
+        const { data: feedbackJob, error: jobError } = await supabase
           .from('feedback_jobs')
           .insert({
             assignment_id: assignment.id,
             status: 'pending',
             worker_type: 'edge',
-          });
+            priority: 5, // 기본 우선순위
+            metadata: {
+              submittedAt: new Date().toISOString(),
+              userId: auth.userId,
+            },
+          })
+          .select('id')
+          .single();
 
         if (jobError) {
           console.error('[Feedback Job Create Error]', jobError);
           // 과제는 저장되었으므로 경고만 로깅
         }
 
-        // 과제 상태 업데이트 (processing으로 변경은 Cron에서)
+        // 2. 즉시 피드백 처리 트리거 (프로덕션 아키텍처: 크론 의존 제거)
+        if (feedbackJob) {
+          const baseUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+          const internalSecret = process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '';
+
+          // Fire-and-forget: 응답 대기 없이 피드백 처리 시작
+          fetch(`${baseUrl}/api/lms/feedback-processor`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-internal-secret': internalSecret,
+            },
+            body: JSON.stringify({
+              jobId: feedbackJob.id,
+              assignmentId: assignment.id,
+              isPremium: false, // 기본값, processor에서 다시 확인
+            }),
+          }).catch((err) => {
+            console.error('[Feedback Processor Trigger Error]', err);
+            // 실패해도 Cron이 fallback으로 처리함
+          });
+        }
       }
 
       return NextResponse.json(
