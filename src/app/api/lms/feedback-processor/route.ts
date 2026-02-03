@@ -130,7 +130,6 @@ export async function POST(request: NextRequest) {
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
-        attempts: supabase.rpc ? undefined : 1, // RPC 없으면 직접 증가
       })
       .eq('id', targetJobId)
       .eq('status', 'pending') // 낙관적 락
@@ -149,10 +148,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // attempts 증가 (별도 쿼리)
+    // attempts 증가 (별도 쿼리로 원자적 증가)
+    const currentAttempts = (job.attempts as number) || 0;
     await supabase
       .from('feedback_jobs')
-      .update({ attempts: (job.attempts || 0) + 1 })
+      .update({ attempts: currentAttempts + 1 })
       .eq('id', targetJobId);
 
     // ============================================================
