@@ -1,0 +1,250 @@
+{
+  "customer_psychology_analysis": {
+    "meta": {
+      "version": "1.0",
+      "purpose": "고객 심리 분석 및 마그네틱 접근법 설계를 위한 프레임워크",
+      "author": "최민준 전무",
+      "last_updated": "2025-01-19"
+    },
+    "customer_profiling": {
+      "demographic_analysis": {
+        "age_psychology": {
+          "20s": {
+            "characteristics": ["경험 추구", "빠른 변화", "소셜 중시", "미래 불안"],
+            "motivators": ["성장", "인정", "자유", "재미"],
+            "communication_style": "빠르고 직관적, 비주얼 중심",
+            "magnetic_approach": "즉시성과 트렌드를 강조한 메시지"
+          },
+          "30s": {
+            "characteristics": ["커리어 집중", "안정성 추구", "효율성 중시", "가족 고려"],
+            "motivators": ["성취", "안정", "효율", "균형"],
+            "communication_style": "논리적이지만 감정적, 구체적 정보 선호",
+            "magnetic_approach": "ROI와 실용성을 강조한 메시지"
+          },
+          "40s": {
+            "characteristics": ["경험 풍부", "신중함", "품질 중시", "장기적 관점"],
+            "motivators": ["품질", "신뢰", "지위", "가족"],
+            "communication_style": "신중하고 분석적, 증거 기반 선호",
+            "magnetic_approach": "전문성과 신뢰도를 강조한 메시지"
+          },
+          "50s_plus": {
+            "characteristics": ["보수적", "경험 중시", "관계 지향", "안정 추구"],
+            "motivators": ["안전", "편안함", "인정", "유산"],
+            "communication_style": "정중하고 격식적, 개인적 관계 중시",
+            "magnetic_approach": "안정성과 명성을 강조한 메시지"
+          }
+        }
+      },
+      "psychographic_segmentation": {
+        "innovators": {
+          "characteristics": ["새로운 것 추구", "위험 감수", "영향력 행사"],
+          "percentage": "2.5%",
+          "magnetic_strategy": "독점성과 최신성 강조",
+          "message_tone": "혁신적이고 도전적"
+        },
+        "early_adopters": {
+          "characteristics": ["의견 선도", "정보 탐색", "사회적 책임"],
+          "percentage": "13.5%",
+          "magnetic_strategy": "전문성과 트렌드 리더십 강조",
+          "message_tone": "전문적이고 미래지향적"
+        },
+        "early_majority": {
+          "characteristics": ["신중함", "실용성", "사회적 증거"],
+          "percentage": "34%",
+          "magnetic_strategy": "사회적 증거와 실용적 혜택 강조",
+          "message_tone": "신뢰할 수 있고 검증된"
+        },
+        "late_majority": {
+          "characteristics": ["회의적", "경제적 고려", "동료 압력"],
+          "percentage": "34%",
+          "magnetic_strategy": "경제성과 안전성 강조",
+          "message_tone": "보수적이고 안전한"
+        },
+        "laggards": {
+          "characteristics": ["전통 고수", "변화 저항", "지역 중심"],
+          "percentage": "16%",
+          "magnetic_strategy": "전통적 가치와 입증된 방법 강조",
+          "message_tone": "친숙하고 안정적"
+        }
+      }
+    },
+    "emotional_drivers": {
+      "primary_emotions": {
+        "fear_based": {
+          "types": ["손실 회피", "실패 공포", "뒤처짐 불안", "시간 낭비"],
+          "triggers": ["기회 놓침", "경쟁 열세", "현상 유지의 위험성"],
+          "magnetic_applications": [
+            "지금 시작하지 않으면 1년 후 후회",
+            "경쟁사가 먼저 적용하면 따라잡기 어려움",
+            "현재 방식으로는 도태될 수밖에 없는 이유"
+          ]
+        },
+        "aspiration_based": {
+          "types": ["성공 열망", "자유 추구", "인정 욕구", "자아실현"],
+          "triggers": ["이상적 미래", "역할 모델", "사회적 지위"],
+          "magnetic_applications": [
+            "원하는 라이프스타일을 실현하는 방법",
+            "업계 리더들이 공통적으로 하는 것",
+            "진정한 전문가가 되는 길"
+          ]
+        }
+      },
+      "emotional_intensity_levels": {
+        "high_intensity": {
+          "situations": ["생존 위기", "중대한 기회", "인생 전환점"],
+          "approach": "강한 메시지, 명확한 행동 촉구",
+          "examples": ["마지막 기회", "인생을 바꿀 결정", "지금 아니면 언제"]
+        },
+        "medium_intensity": {
+          "situations": ["개선 욕구", "불편함 해소", "효율성 추구"],
+          "approach": "점진적 개선 제안, 합리적 근거",
+          "examples": ["더 나은 방법", "현명한 선택", "스마트한 솔루션"]
+        },
+        "low_intensity": {
+          "situations": ["호기심", "정보 습득", "탐색 단계"],
+          "approach": "정보 제공, 교육적 내용",
+          "examples": ["알아두면 유용한", "참고할 만한", "흥미로운 사실"]
+        }
+      }
+    },
+    "buying_behavior_patterns": {
+      "decision_making_styles": {
+        "analytical": {
+          "characteristics": ["데이터 중심", "논리적 분석", "철저한 검토"],
+          "decision_time": "길다 (몇 주~몇 달)",
+          "information_needs": ["상세한 스펙", "비교 분석", "ROI 계산"],
+          "magnetic_approach": "충분한 데이터와 논리적 근거 제공",
+          "content_preference": "백서, 사례 연구, 비교표"
+        },
+        "driver": {
+          "characteristics": ["빠른 결정", "결과 중심", "효율성 추구"],
+          "decision_time": "짧다 (몇 시간~며칠)",
+          "information_needs": ["핵심 요약", "명확한 혜택", "즉시 실행"],
+          "magnetic_approach": "간결하고 강력한 메시지, 즉시 행동 유도",
+          "content_preference": "요약본, 인포그래픽, 동영상"
+        },
+        "expressive": {
+          "characteristics": ["감정 중심", "사회적 고려", "관계 지향"],
+          "decision_time": "중간 (며칠~몇 주)",
+          "information_needs": ["사용자 후기", "사회적 증거", "감정적 연결"],
+          "magnetic_approach": "스토리텔링과 감정적 어필",
+          "content_preference": "후기, 사례, 스토리"
+        },
+        "amiable": {
+          "characteristics": ["신중함", "안정 추구", "위험 회피"],
+          "decision_time": "길다 (몇 주~몇 달)",
+          "information_needs": ["보장", "안전성", "단계적 접근"],
+          "magnetic_approach": "안전성과 지원을 강조, 점진적 접근",
+          "content_preference": "가이드, FAQ, 지원 정보"
+        }
+      }
+    },
+    "resistance_patterns": {
+      "common_objections": {
+        "price_sensitivity": {
+          "symptoms": ["너무 비싸다", "예산이 없다", "가격 대비 효과가 의심스럽다"],
+          "underlying_psychology": "손실 회피 편향, 가치 인식 부족",
+          "magnetic_solutions": [
+            "가치 기준으로 재프레이밍 (시간당 비용, ROI)",
+            "분할 결제 옵션 제시",
+            "무료 체험이나 보장 제공",
+            "기회비용 강조"
+          ]
+        },
+        "trust_issues": {
+          "symptoms": ["정말 효과가 있나?", "사기가 아닌가?", "너무 좋은 얘기 아닌가?"],
+          "underlying_psychology": "불확실성 회피, 사기 경험, 완벽주의",
+          "magnetic_solutions": [
+            "구체적인 증거와 데이터 제시",
+            "투명한 과정 공개",
+            "제3자 검증 활용",
+            "작은 약속부터 시작"
+          ]
+        },
+        "timing_concerns": {
+          "symptoms": ["지금은 바쁘다", "나중에 생각해볼게", "타이밍이 안 맞다"],
+          "underlying_psychology": "현상 유지 편향, 완벽한 타이밍 기대",
+          "magnetic_solutions": [
+            "지금이 최적 타이밍인 이유",
+            "기회비용 계산",
+            "단계적 시작 방법",
+            "바쁜 사람일수록 더 필요한 이유"
+          ]
+        }
+      }
+    },
+    "persuasion_strategies": {
+      "reciprocity_applications": {
+        "free_value_first": {
+          "methods": ["무료 콘텐츠", "무료 진단", "무료 컨설팅"],
+          "psychology": "받은 것에 대한 보답 심리",
+          "implementation": "요청하기 전에 먼저 가치 제공"
+        }
+      },
+      "social_proof_variations": {
+        "expert_social_proof": {
+          "types": ["전문가 추천", "언론 보도", "인증서"],
+          "effectiveness": "신뢰도 높은 타겟에게 효과적",
+          "application": "권위있는 기관이나 인물의 인정"
+        },
+        "user_social_proof": {
+          "types": ["고객 후기", "사용자 수", "평점"],
+          "effectiveness": "유사한 상황의 고객에게 효과적",
+          "application": "같은 업종, 비슷한 규모의 성공 사례"
+        },
+        "wisdom_of_crowds": {
+          "types": ["가입자 수", "판매량", "시장 점유율"],
+          "effectiveness": "불확실성이 큰 상황에서 효과적",
+          "application": "많은 사람들이 선택하고 있다는 사실"
+        }
+      }
+    },
+    "channel_specific_psychology": {
+      "social_media_mindset": {
+        "instagram": {
+          "user_psychology": "시각적 자극 추구, 라이프스타일 동경, 즉시성",
+          "attention_span": "3-7초",
+          "engagement_trigger": "감정적 반응, 미적 만족",
+          "magnetic_approach": "시각적 임팩트 + 감정적 메시지"
+        },
+        "facebook": {
+          "user_psychology": "정보 공유, 사회적 연결, 토론 참여",
+          "attention_span": "15-30초",
+          "engagement_trigger": "공감대 형성, 의견 표현",
+          "magnetic_approach": "스토리텔링 + 커뮤니티 감각"
+        },
+        "youtube": {
+          "user_psychology": "학습 욕구, 문제 해결, 엔터테인먼트",
+          "attention_span": "8-15초 (훅), 5-10분 (전체)",
+          "engagement_trigger": "유용성, 재미, 전문성",
+          "magnetic_approach": "교육적 가치 + 실용적 팁"
+        }
+      },
+      "email_mindset": {
+        "user_psychology": "개인적 관계, 신뢰 기반, 가치 기대",
+        "reading_pattern": "제목 → 첫 문단 → 스캔 → 행동",
+        "decision_factors": "발송자 신뢰도, 제목 관련성, 내용 가치",
+        "magnetic_approach": "개인화 + 연속적 가치 제공"
+      }
+    },
+    "behavioral_triggers": {
+      "cognitive_biases": {
+        "anchoring_bias": {
+          "definition": "처음 받은 정보에 과도하게 의존",
+          "application": "높은 가격을 먼저 제시한 후 할인된 가격 제시",
+          "example": "정가 100만원 → 런칭 특가 50만원"
+        },
+        "confirmation_bias": {
+          "definition": "기존 믿음을 확인해주는 정보를 선호",
+          "application": "타겟의 기존 믿음을 인정하고 보완하는 방향으로 제시",
+          "example": "당신이 생각하는 게 맞습니다. 거기에 이것만 추가하면..."
+        },
+        "loss_aversion": {
+          "definition": "얻는 것보다 잃는 것을 더 크게 느끼는 성향",
+          "application": "놓치게 될 기회나 손실을 강조",
+          "example": "이 기회를 놓치면 1년 후 10배 더 어려워집니다"
+        }
+      }
+    }
+  }
+}

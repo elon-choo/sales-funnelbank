@@ -1,0 +1,229 @@
+{
+  "magnetic_copywriting_templates": {
+    "meta": {
+      "version": "1.0",
+      "purpose": "즉시 사용 가능한 마그네틱 카피라이팅 템플릿 및 실전 예시",
+      "author": "최민준 전무",
+      "last_updated": "2025-01-19"
+    },
+    "headline_templates": {
+      "problem_solution": {
+        "template": "[문제상황]을 [해결방법]으로 해결한 [결과] 스토리",
+        "examples": [
+          "매출 0원 상황을 한 줄 카피로 해결한 월 3억 달성 스토리",
+          "SNS 팔로워 100명을 마그네틱 콘텐츠로 해결한 10만 팔로워 달성 스토리",
+          "광고 실패를 심리학으로 해결한 전환율 2000% 향상 스토리"
+        ]
+      },
+      "curiosity_gap": {
+        "template": "[놀라운 결과]를 만든 [의외의 방법] (feat. [구체적 수치])",
+        "examples": [
+          "월매출 10억을 만든 3글자 마법 (feat. 전환율 2847% 상승)",
+          "1000만 조회수를 만든 반전 스토리 (feat. 구독자 10만 증가)",
+          "평생고객을 만든 5분 대화법 (feat. 재구매율 94%)"
+        ]
+      },
+      "social_proof": {
+        "template": "[숫자]명이 선택한 [결과]의 비밀",
+        "examples": [
+          "3,847명이 선택한 매출폭증의 비밀",
+          "10,000명이 검증한 마케팅 성공법칙",
+          "2,156명이 실현한 경제적자유 로드맵"
+        ]
+      },
+      "transformation": {
+        "template": "[before상황]에서 [after상황]까지, [기간] 만에 가능한 [방법]",
+        "examples": [
+          "월급쟁이에서 사업가까지, 90일 만에 가능한 마그네틱 전략",
+          "0팔로워에서 10만까지, 6개월만에 가능한 콘텐츠 공식",
+          "빚더미에서 자유인까지, 1년만에 가능한 수익 시스템"
+        ]
+      }
+    },
+    "email_templates": {
+      "welcome_email": {
+        "subject_lines": [
+          "[이름]님, 특별한 여정이 시작됩니다",
+          "드디어 만나뵙게 되었네요, [이름]님",
+          "[이름]님을 위한 첫 번째 선물입니다"
+        ],
+        "structure": {
+          "opening": "따뜻한 환영 인사",
+          "value_promise": "앞으로 받게 될 가치 미리보기",
+          "immediate_gift": "즉시 사용 가능한 선물 제공",
+          "next_step": "다음 이메일 예고"
+        },
+        "template": "안녕하세요 [이름]님,\n\n드디어 만나뵙게 되어 정말 기쁩니다.\n\n앞으로 [이름]님께 전해드릴 것들:\n• [가치1]\n• [가치2]\n• [가치3]\n\n그리고 오늘은 특별한 선물로 시작하려고 합니다.\n[구체적 선물 내용]\n\n내일은 [다음 이메일 주제]에 대해 말씀드리겠습니다.\n\n[이름]님의 성공을 진심으로 응원합니다.\n\n최민준 드림"
+      },
+      "value_email": {
+        "subject_lines": [
+          "99%가 놓치는 [주제]의 핵심",
+          "[이름]님, 이것만은 꼭 확인하세요",
+          "전문가들이 감추는 [분야] 비밀"
+        ],
+        "structure": {
+          "hook": "궁금증을 자아내는 시작",
+          "story": "개인 경험이나 고객 사례",
+          "insight": "핵심 인사이트 전달",
+          "application": "실제 적용 방법",
+          "teaser": "다음 이메일 예고"
+        }
+      },
+      "sales_email": {
+        "subject_lines": [
+          "마지막으로 말씀드리는 기회입니다",
+          "[이름]님의 결정을 기다리고 있습니다",
+          "놓치기엔 너무 아까운 [혜택]"
+        ],
+        "structure": {
+          "relationship_building": "지금까지의 관계 언급",
+          "problem_amplification": "해결해야 할 문제 재확인",
+          "solution_presentation": "명확한 해결책 제시",
+          "urgency_scarcity": "즉시 결정해야 할 이유",
+          "easy_next_step": "간단한 다음 단계"
+        }
+      }
+    },
+    "social_media_templates": {
+      "instagram_post": {
+        "hook_formulas": [
+          "충격적인 고백: [놀라운 사실]",
+          "솔직히 말씀드리면, [반전 내용]",
+          "[숫자] 전에는 [before], 지금은 [after]"
+        ],
+        "story_structure": {
+          "hook": "스크롤 멈추게 하는 첫 줄",
+          "context": "상황 설명",
+          "conflict": "문제나 갈등",
+          "resolution": "해결 방법",
+          "lesson": "배운 점이나 교훈",
+          "cta": "참여나 행동 유도"
+        },
+        "hashtag_strategy": {
+          "branded": "#마그네틱세일즈 #최민준전무",
+          "trending": "#마케팅팁 #카피라이팅 #전환율",
+          "niche": "#퍼포먼스마케팅 #그로스해킹",
+          "emotional": "#성공비결 #인생역전 #꿈실현"
+        }
+      },
+      "facebook_post": {
+        "question_starters": [
+          "혹시 [상황]으로 고민이신가요?",
+          "[주제]에 대해 어떻게 생각하시나요?",
+          "가장 어려운 점이 무엇인가요?"
+        ],
+        "educational_format": {
+          "headline": "오늘의 마그네틱 팁",
+          "introduction": "많은 분들이 질문하신 내용",
+          "main_content": "3-5개의 핵심 포인트",
+          "conclusion": "실행해보시고 결과 공유해주세요",
+          "engagement": "댓글로 궁금한 점 남겨주세요"
+        }
+      },
+      "youtube_description": {
+        "structure": {
+          "hook": "영상 내용 요약과 시청 이유",
+          "timestamps": "주요 섹션별 타임스탬프",
+          "resources": "언급된 도구나 자료 링크",
+          "community": "구독, 좋아요, 알림 설정 요청",
+          "connect": "다른 소셜미디어 연결"
+        }
+      }
+    },
+    "landing_page_copy": {
+      "headline_subheadline": {
+        "headline": "[구체적 결과]를 [시간]만에 달성하는 [방법]",
+        "subheadline": "[타겟 대상]을 위한 [차별점] 시스템"
+      },
+      "benefit_bullets": {
+        "format": "✓ [구체적 혜택] ([시간/숫자로 정량화])",
+        "examples": [
+          "✓ 매출 300% 증가 (평균 90일 내)",
+          "✓ 광고비 50% 절약 (ROI 500% 달성)",
+          "✓ 자동화 시스템 구축 (하루 2시간 업무로 단축)"
+        ]
+      },
+      "objection_handling": {
+        "common_concerns": {
+          "time": "바쁜 분들을 위해 하루 30분만 투자하면 됩니다",
+          "difficulty": "단계별 가이드로 초보자도 쉽게 따라할 수 있습니다",
+          "cost": "한 달 카페비보다 저렴한 투자로 평생 활용 가능합니다",
+          "results": "30일 내 결과가 없으면 100% 환불해드립니다"
+        }
+      },
+      "urgency_elements": {
+        "limited_time": "이 가격은 [날짜]까지만 유효합니다",
+        "limited_quantity": "선착순 [숫자]명만 제공됩니다",
+        "bonus_expiry": "특별 보너스는 [시간] 후 사라집니다"
+      }
+    },
+    "video_scripts": {
+      "youtube_intro": {
+        "hook": "오늘 영상으로 [구체적 혜택]을 얻어가세요",
+        "preview": "이 영상에서는 [주요 내용 3가지]를 다룹니다",
+        "credibility": "제가 [경험/결과]를 바탕으로 설명드릴게요",
+        "engagement": "끝까지 보시면 [특별 혜택]도 있으니까 놓치지 마세요"
+      },
+      "explanation_body": {
+        "point_introduction": "첫 번째로 말씀드릴 것은 [포인트]입니다",
+        "story_example": "실제로 [고객명]님의 경우에는...",
+        "practical_tip": "바로 적용할 수 있는 방법은...",
+        "transition": "이제 두 번째로 중요한 것을 말씀드리면..."
+      },
+      "call_to_action": {
+        "value_recap": "정리하면 오늘 배운 것은 [핵심 내용]이었습니다",
+        "next_step": "더 자세한 내용은 설명란의 링크를 확인해보세요",
+        "engagement": "댓글로 질문 남겨주시면 직접 답변드리겠습니다",
+        "subscribe": "이런 유용한 정보를 놓치지 않으려면 구독과 알림 설정 필수입니다"
+      }
+    },
+    "conversion_boosters": {
+      "testimonial_format": {
+        "before_situation": "[고객명]님의 시작 상황",
+        "challenge": "가장 큰 어려움이나 고민",
+        "solution": "어떤 방법을 적용했는지",
+        "results": "구체적인 수치와 변화",
+        "emotion": "개인적인 감정이나 만족도"
+      },
+      "guarantee_statements": {
+        "satisfaction": "100% 만족 보장 - 만족하지 않으시면 전액 환불",
+        "results": "30일 내 결과 보장 - 효과 없으면 무조건 환불",
+        "support": "1:1 맞춤 지원 - 성공할 때까지 함께합니다"
+      },
+      "bonus_presentation": {
+        "value_stacking": "[메인 상품] + [보너스1] + [보너스2] = 총 가치 [금액]",
+        "limited_bonus": "오늘만 특별히 추가로 드리는 [보너스명]",
+        "surprise_bonus": "그런데 여기서 끝이 아닙니다. 추가로..."
+      }
+    },
+    "industry_specific": {
+      "education_sector": {
+        "pain_points": ["성적 부진", "학습 효율성", "입시 스트레스"],
+        "desired_outcomes": ["성적 향상", "효율적 학습", "명문대 합격"],
+        "trust_builders": ["합격 후기", "성적 인증", "전문가 추천"]
+      },
+      "business_sector": {
+        "pain_points": ["매출 정체", "마케팅 실패", "경쟁 심화"],
+        "desired_outcomes": ["매출 증가", "브랜드 인지도", "시장 점유율"],
+        "trust_builders": ["성과 데이터", "기업 사례", "전문가 인증"]
+      },
+      "health_wellness": {
+        "pain_points": ["건강 악화", "체중 관리", "스트레스"],
+        "desired_outcomes": ["건강 개선", "이상적 체중", "활력 회복"],
+        "trust_builders": ["전후 사진", "의학적 근거", "전문가 추천"]
+      }
+    },
+    "personalization_variables": {
+      "demographic": {
+        "age_groups": ["20대", "30대", "40대", "50대 이상"],
+        "gender": ["남성", "여성", "무관"],
+        "occupation": ["직장인", "사업자", "프리랜서", "학생"]
+      },
+      "psychographic": {
+        "motivations": ["성취", "인정", "자유", "안정"],
+        "concerns": ["시간 부족", "비용 부담", "실패 두려움", "복잡함"],
+        "communication_style": ["논리적", "감정적", "실용적", "창의적"]
+      }
+    }
+  }
+}

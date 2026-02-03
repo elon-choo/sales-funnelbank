@@ -1,0 +1,15 @@
+Connecting to remote database...
+Do you want to push these migrations to the remote database?
+ ??005_rate_limits.sql
+ ??006_token_reservations.sql
+ ??007_functions_triggers.sql
+ ??008_rls_policies.sql
+ ??009_schema_fixes.sql
+
+ [Y/n] Applying migration 005_rate_limits.sql...
+ERROR: functions in index predicate must be marked IMMUTABLE (SQLSTATE 42P17)  
+At statement 2: -- ?뺣━???몃뜳??                                               
+CREATE INDEX IF NOT EXISTS idx_rate_limits_cleanup
+                             
+    ON rate_limits(window_start) WHERE window_start < NOW() - INTERVAL '1 hour'
+Try rerunning the command with --debug to troubleshoot the error.

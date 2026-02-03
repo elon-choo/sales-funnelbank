@@ -1,0 +1,189 @@
+{
+  "channel_optimization_strategies": {
+    "meta": {
+      "version": "1.0",
+      "purpose": "채널별 마그네틱 세일즈 최적화 전략 및 실행 방법",
+      "author": "최민준 전무",
+      "last_updated": "2025-01-19"
+    },
+    "social_media": {
+      "instagram": {
+        "platform_characteristics": {
+          "visual_first": "이미지와 영상이 텍스트보다 우선",
+          "mobile_optimized": "모바일 세로 화면 최적화 필요",
+          "short_attention": "평균 3초 내 흥미 유발 필요",
+          "engagement_driven": "좋아요, 댓글, 공유가 성과 지표"
+        },
+        "magnetic_strategies": {
+          "visual_hooks": {
+            "before_after": "변화 과정을 시각적으로 보여주기",
+            "behind_scenes": "제작 과정이나 내부 이야기 공개",
+            "user_generated": "고객이 직접 만든 콘텐츠 활용",
+            "infographic": "복잡한 정보를 간단한 그래픽으로 전달"
+          },
+          "caption_formulas": {
+            "hook_story_value_cta": {
+              "hook": "첫 줄에서 스크롤 멈추게 하기",
+              "story": "개인적인 경험이나 고객 사례",
+              "value": "실용적인 팁이나 인사이트 제공",
+              "cta": "댓글이나 DM으로 참여 유도"
+            }
+          },
+          "hashtag_strategy": {
+            "emotion_tags": "#놀라운결과 #인생역전 #꿈실현",
+            "benefit_tags": "#매출증가 #시간절약 #스트레스해소",
+            "urgency_tags": "#한정특가 #마감임박 #지금만"
+          },
+          "timing_optimization": {
+            "weekdays": "오후 7-9시 (퇴근 후 개인 시간)",
+            "weekends": "오후 1-3시 (여유로운 시간)",
+            "avoid": "새벽 1-6시 (잠자는 시간)"
+          }
+        }
+      },
+      "facebook": {
+        "platform_characteristics": {
+          "community_focused": "그룹과 페이지 중심의 커뮤니티",
+          "longer_content": "긴 텍스트도 허용되는 환경",
+          "family_friends": "가족, 친구와의 연결 중시",
+          "sharing_culture": "좋은 콘텐츠는 적극적으로 공유"
+        },
+        "magnetic_strategies": {
+          "content_types": {
+            "problem_solving": "구체적인 문제 해결 방법 제시",
+            "educational": "유용한 정보나 지식 전달",
+            "inspirational": "동기부여가 되는 성공 스토리",
+            "behind_scenes": "브랜드의 진정성 있는 모습"
+          },
+          "engagement_tactics": {
+            "question_posts": "댓글 유도하는 질문 던지기",
+            "poll_surveys": "간단한 투표나 설문 진행",
+            "fill_blanks": "'OO할 때 가장 중요한 것은 ___' 형식",
+            "controversy": "건전한 논쟁을 유도하는 주제"
+          }
+        }
+      },
+      "youtube": {
+        "platform_characteristics": {
+          "long_form_content": "심층적인 내용 전달 가능",
+          "search_based": "검색을 통한 발견이 중요",
+          "education_focus": "학습과 정보 습득 목적",
+          "subscriber_loyalty": "구독자와의 장기적 관계"
+        },
+        "magnetic_strategies": {
+          "video_structure": {
+            "hook": "첫 15초 내 핵심 가치 제시",
+            "preview": "이 영상에서 얻을 수 있는 것 미리보기",
+            "content": "약속한 가치를 충실히 전달",
+            "cta": "구독, 좋아요, 다음 영상 시청 유도"
+          },
+          "thumbnail_optimization": {
+            "contrast_colors": "배경과 강한 대비를 이루는 색상",
+            "facial_expression": "감정이 드러나는 표정 사용",
+            "text_overlay": "핵심 메시지를 간단히 텍스트로",
+            "curiosity_gap": "궁금증을 자아내는 이미지"
+          }
+        }
+      }
+    },
+    "email_marketing": {
+      "platform_characteristics": {
+        "personal_space": "개인적인 공간에서 읽는 메시지",
+        "permission_based": "구독 동의한 사람들에게만 발송",
+        "measurable": "개봉률, 클릭률 등 정확한 측정 가능",
+        "automation": "시나리오 기반 자동 발송 가능"
+      },
+      "magnetic_strategies": {
+        "subject_line_formulas": {
+          "curiosity_gap": "'99%가 놓치는 성공의 비밀'",
+          "benefit_focused": "'30일 만에 매출 3배 늘리는 법'",
+          "personal_touch": "'[이름]님만을 위한 특별 제안'",
+          "urgency_scarcity": "'오늘 밤 12시 마감 - 놓치면 후회'"
+        },
+        "content_structure": {
+          "preheader": "제목줄을 보완하는 미리보기 텍스트",
+          "opening": "개인적인 인사와 가치 제시",
+          "body": "스토리텔링으로 메시지 전달",
+          "cta": "단 하나의 명확한 행동 유도"
+        },
+        "sequence_strategy": {
+          "welcome_series": {
+            "day_0": "환영 인사와 첫인상 형성",
+            "day_3": "핵심 가치 콘텐츠 제공",
+            "day_7": "사회적 증거와 신뢰도 구축",
+            "day_14": "개인적 스토리로 감정적 연결",
+            "day_21": "첫 번째 오퍼 제안"
+          }
+        }
+      }
+    },
+    "landing_pages": {
+      "platform_characteristics": {
+        "single_purpose": "하나의 명확한 목표만 추구",
+        "conversion_focused": "방문자를 고객으로 전환이 목적",
+        "measured_performance": "전환율로 성과 측정",
+        "traffic_driven": "광고나 링크를 통한 트래픽 유입"
+      },
+      "magnetic_strategies": {
+        "above_fold_optimization": {
+          "headline": "3초 내 이해 가능한 핵심 가치",
+          "subheadline": "헤드라인을 보완하는 구체적 설명",
+          "hero_image": "목표 달성 후 모습을 시각화",
+          "cta_button": "다음 단계가 명확한 버튼 텍스트"
+        },
+        "psychological_flow": {
+          "attention": "강력한 헤드라인으로 시선 집중",
+          "interest": "문제와 해결책 제시로 흥미 유발",
+          "desire": "변화된 미래 모습으로 욕구 자극",
+          "action": "쉽고 명확한 다음 단계 제시"
+        },
+        "trust_elements": {
+          "social_proof": "고객 후기와 성공 사례",
+          "authority": "전문가 인증이나 언론 보도",
+          "security": "개인정보 보호 정책",
+          "guarantee": "만족보장이나 환불 정책"
+        }
+      }
+    },
+    "performance_metrics": {
+      "instagram": {
+        "engagement_rate": ">6% (업계 평균 1-3%)",
+        "story_completion": ">70% (스토리 끝까지 시청)",
+        "profile_visits": ">15% (포스트 본 후 프로필 방문)",
+        "website_clicks": ">3% (바이오 링크 클릭)"
+      },
+      "facebook": {
+        "engagement_rate": ">4% (업계 평균 0.9%)",
+        "share_rate": ">2% (콘텐츠 공유)",
+        "video_retention": ">50% (영상 절반 이상 시청)",
+        "click_through": ">5% (링크 클릭)"
+      },
+      "email_marketing": {
+        "open_rate": ">25% (업계 평균 18-22%)",
+        "click_rate": ">8% (업계 평균 2-5%)",
+        "unsubscribe_rate": "<0.5% (건전한 수준)",
+        "conversion_rate": ">5% (이메일에서 구매)"
+      },
+      "landing_pages": {
+        "conversion_rate": ">15% (업계 평균 2-5%)",
+        "bounce_rate": "<30% (즉시 이탈)",
+        "time_on_page": ">2분 (충분한 검토 시간)",
+        "scroll_depth": ">80% (페이지 대부분 확인)"
+      }
+    },
+    "cross_channel_integration": {
+      "message_consistency": {
+        "core_value_prop": "모든 채널에서 동일한 핵심 가치 제안",
+        "brand_voice": "일관된 브랜드 톤앤매너 유지",
+        "visual_identity": "통일된 색상, 폰트, 디자인 사용"
+      },
+      "customer_journey": {
+        "awareness": "소셜미디어에서 첫 접점 형성",
+        "interest": "이메일로 깊이 있는 정보 제공",
+        "consideration": "랜딩페이지에서 구체적 제안",
+        "purchase": "최적화된 결제 과정으로 전환",
+        "retention": "지속적인 가치 제공으로 재구매 유도"
+      }
+    }
+  }
+}

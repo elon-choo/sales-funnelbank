@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "projectSettings": {
+    "framework": "nextjs"
+  },
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/process-feedback",
+      "schedule": "* * * * *"
+    }
+  ]
+}

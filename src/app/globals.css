@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 260 100% 2%;
+  --foreground: 210 40% 98%;
+
+  --card: 260 60% 5%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 260 60% 5%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 262.1 83.3% 57.8%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 260 30% 12%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 260 30% 12%;
+  --muted-foreground: 215 20.2% 65.1%;
+
+  --accent: 262.1 83.3% 90%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 260 30% 15%;
+  --input: 260 30% 12%;
+  --ring: 262.1 83.3% 57.8%;
+
+  --radius: 0.75rem;
+
+  /* Premium Gradients */
+  --gradient-primary: linear-gradient(135deg, #7C3AED 0%, #DB2777 100%);
+  --gradient-dark: linear-gradient(135deg, #030014 0%, #0A0A1B 100%);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.05);
+
+  /* Brand Colors */
+  --brand-purple: #7C3AED;
+  --brand-pink: #DB2777;
+  --brand-cyan: #06B6D4;
+  --deep-space: #030014;
+  --midnight: #0A0A1B;
+}
+
+.dark {
+  --background: 260 100% 2%;
+  --foreground: 210 40% 98%;
+
+  --card: 260 60% 5%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 260 60% 5%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 262.1 83.3% 57.8%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 260 30% 12%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 260 30% 12%;
+  --muted-foreground: 215 20.2% 65.1%;
+
+  --accent: 260 30% 15%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 260 30% 15%;
+  --input: 260 30% 12%;
+  --ring: 262.1 83.3% 57.8%;
+
+  --gradient-primary: linear-gradient(135deg, #7C3AED 0%, #DB2777 100%);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Glassmorphism Utilities */
+@layer utilities {
+  .glass {
+    @apply bg-white/10 backdrop-blur-lg border border-white/20 shadow-xl;
+  }
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  }
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600;
+  }
+}
