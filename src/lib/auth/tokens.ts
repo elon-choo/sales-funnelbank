@@ -43,29 +43,43 @@ export async function generateAccessToken(payload: {
 
 /**
  * Access Token 검증
- * - Supabase JWT 토큰 검증 (SUPABASE_JWT_SECRET 사용)
- * - 만료, 서명 검증
+ * - Supabase Auth getUser() 사용 (가장 안정적)
+ * - 만료, 서명 검증은 Supabase가 처리
  */
 export async function verifyAccessToken(
     token: string
 ): Promise<TokenPayload | null> {
     try {
-        const secret = getJWTSecret();
+        // Supabase에서 직접 토큰 검증
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                global: {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                },
+            }
+        );
 
-        // Supabase 토큰 검증 (issuer/audience 체크 제거 - Supabase 토큰 호환)
-        const { payload } = await jwtVerify(token, secret);
+        const { data: { user }, error } = await supabase.auth.getUser();
 
-        // Supabase 토큰은 sub에 user ID, email은 별도 필드
+        if (error || !user) {
+            console.error('Supabase token verification failed:', error?.message);
+            return null;
+        }
+
         return {
-            sub: payload.sub as string,
-            email: (payload.email as string) || '',
-            tier: (payload.tier as UserTier) || 'FREE',
-            role: (payload.role as UserRole) || 'user',
-            iat: payload.iat as number,
-            exp: payload.exp as number,
+            sub: user.id,
+            email: user.email || '',
+            tier: 'FREE' as UserTier, // 프로필에서 별도 조회 필요
+            role: 'user' as UserRole, // 프로필에서 별도 조회 필요
+            iat: 0,
+            exp: 0,
         };
     } catch (error) {
-        // 토큰 만료, 서명 불일치 등
         console.error('Token verification failed:', error);
         return null;
     }
