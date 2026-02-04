@@ -43,7 +43,8 @@ export async function generateAccessToken(payload: {
 
 /**
  * Access Token 검증
- * - 만료, 서명, 발급자 검증
+ * - Supabase JWT 토큰 검증 (SUPABASE_JWT_SECRET 사용)
+ * - 만료, 서명 검증
  */
 export async function verifyAccessToken(
     token: string
@@ -51,16 +52,15 @@ export async function verifyAccessToken(
     try {
         const secret = getJWTSecret();
 
-        const { payload } = await jwtVerify(token, secret, {
-            issuer: 'magnetic-sales-webapp',
-            audience: 'magnetic-sales-api',
-        });
+        // Supabase 토큰 검증 (issuer/audience 체크 제거 - Supabase 토큰 호환)
+        const { payload } = await jwtVerify(token, secret);
 
+        // Supabase 토큰은 sub에 user ID, email은 별도 필드
         return {
             sub: payload.sub as string,
-            email: payload.email as string,
-            tier: payload.tier as UserTier,
-            role: (payload.role || 'user') as UserRole,
+            email: (payload.email as string) || '',
+            tier: (payload.tier as UserTier) || 'FREE',
+            role: (payload.role as UserRole) || 'user',
             iat: payload.iat as number,
             exp: payload.exp as number,
         };
