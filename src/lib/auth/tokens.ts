@@ -3,6 +3,7 @@
 import 'server-only';
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+import { createClient } from '@supabase/supabase-js';
 import type { TokenPayload, UserTier, UserRole } from '@/types/auth';
 
 // JWT Secret을 Uint8Array로 변환 (jose 요구사항)
@@ -51,7 +52,6 @@ export async function verifyAccessToken(
 ): Promise<TokenPayload | null> {
     try {
         // Supabase에서 직접 토큰 검증
-        const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
