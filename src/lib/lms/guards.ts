@@ -70,17 +70,25 @@ async function authenticateLmsRequest(
       return null;
     }
 
-    // 프로필 조회 (lms_role 포함)
+    // 프로필 조회 (lms_role 컬럼 없으면 기본값 사용)
     const supabase = createAdminClient();
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('tier, role, is_approved, deleted_at, lms_role')
+      .select('tier, role, is_approved, deleted_at')
       .eq('id', payload.sub)
       .single();
+
+    if (profileError) {
+      console.error('[LMS Auth] Profile query error:', profileError.message);
+      return null;
+    }
 
     if (!profile || profile.deleted_at || !profile.is_approved) {
       return null;
     }
+
+    // lms_role은 role 또는 tier 기반으로 결정 (lms_role 컬럼이 없을 경우)
+    const lmsRole: LmsRole = (profile.role === 'admin' || profile.tier === 'ENTERPRISE') ? 'admin' : 'student';
 
     return {
       userId: payload.sub,
@@ -88,7 +96,7 @@ async function authenticateLmsRequest(
       tier: profile.tier as UserTier,
       role: profile.role || 'user',
       isApproved: profile.is_approved,
-      lmsRole: (profile.lms_role || 'student') as LmsRole,
+      lmsRole,
     };
   } catch (error) {
     console.error('[LMS Auth Error]', error);
