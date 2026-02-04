@@ -5,7 +5,6 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
 import { verifyAccessToken } from '@/lib/auth/tokens';
 import type { AuthResult, UserTier } from '@/types/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -137,7 +136,8 @@ export async function withLmsAuth(
     );
   }
 
-  const supabase = await createClient();
+  // Admin 클라이언트 사용 (Bearer 토큰 인증에서는 쿠키 세션 없음)
+  const supabase = createAdminClient();
   return handler(auth, supabase);
 }
 
@@ -173,7 +173,8 @@ export async function withLmsAdminAuth(
     );
   }
 
-  const supabase = await createClient();
+  // Admin 클라이언트 사용 (Bearer 토큰 인증에서는 쿠키 세션 없음)
+  const supabase = createAdminClient();
   return handler(auth, supabase);
 }
 
@@ -205,7 +206,8 @@ export async function withEnrollmentAuth(
     );
   }
 
-  const supabase = await createClient();
+  // Admin 클라이언트 사용 (Bearer 토큰 인증에서는 쿠키 세션 없음)
+  const supabase = createAdminClient();
 
   // 관리자는 모든 기수 접근 가능
   if (auth.lmsRole === 'admin' || auth.tier === 'ENTERPRISE') {
