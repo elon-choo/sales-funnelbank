@@ -44,11 +44,8 @@ export async function POST(request: NextRequest) {
             const response = NextResponse.json({
                 success: true,
                 data: {
-                    session: {
-                        access_token: 'HARDCODED_ADMIN_TOKEN',
-                        refresh_token: 'HARDCODED_ADMIN_REFRESH',
-                        expires_in: 3600,
-                    },
+                    accessToken: 'HARDCODED_ADMIN_TOKEN',
+                    expiresIn: 3600,
                     user: {
                         id: HARDCODED_ADMIN.id,
                         email: HARDCODED_ADMIN.email,
@@ -59,6 +56,11 @@ export async function POST(request: NextRequest) {
                         createdAt: HARDCODED_ADMIN.createdAt
                     }
                 }
+            });
+            // Refresh Token 쿠키 설정
+            response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, 'HARDCODED_ADMIN_REFRESH_' + Date.now(), {
+                ...COOKIE_CONFIG.options,
+                maxAge: COOKIE_CONFIG.maxAge.REFRESH_TOKEN,
             });
             return response;
         }
@@ -112,15 +114,12 @@ export async function POST(request: NextRequest) {
             details: { email },
         });
 
-        // 응답 생성
+        // 응답 생성 (프론트엔드 LoginResponse 타입에 맞춤)
         const response = NextResponse.json({
             success: true,
             data: {
-                session: {
-                    access_token: authData.session.access_token,
-                    refresh_token: authData.session.refresh_token,
-                    expires_in: authData.session.expires_in,
-                },
+                accessToken: authData.session.access_token,
+                expiresIn: authData.session.expires_in,
                 user: {
                     id: authData.user.id,
                     email: authData.user.email,
