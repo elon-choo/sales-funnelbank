@@ -66,7 +66,6 @@ export async function GET(request: NextRequest) {
                     email_confirmed: authUser.email_confirmed_at ? true : false,
                     created_at: authUser.created_at,
                     last_sign_in: authUser.last_sign_in_at,
-                    banned: authUser.banned_until ? true : false,
                 },
                 profile: profile ? {
                     full_name: profile.full_name,
