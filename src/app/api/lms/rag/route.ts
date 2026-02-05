@@ -16,10 +16,11 @@ export async function GET(request: NextRequest) {
           id,
           name,
           file_path,
+          file_size,
           chunk_count,
-          status,
-          created_at,
-          updated_at
+          version,
+          is_active,
+          created_at
         `)
         .order('created_at', { ascending: false });
 
@@ -90,8 +91,10 @@ export async function POST(request: NextRequest) {
         .insert({
           name,
           file_path: `manual/${Date.now()}_${name}`,
+          file_size: content.length,
           chunk_count: 0,
-          status: 'processing',
+          version: 1,
+          is_active: true,
         })
         .select()
         .single();
@@ -126,25 +129,25 @@ export async function POST(request: NextRequest) {
 
       if (chunksError) {
         console.error('[RAG Chunks Create Error]', chunksError);
-        // 데이터셋은 생성되었지만 청크 실패
-        await supabase.from('rag_datasets').update({ status: 'failed' }).eq('id', dataset.id);
+        // 데이터셋은 생성되었지만 청크 실패 - 비활성화
+        await supabase.from('rag_datasets').update({ is_active: false }).eq('id', dataset.id);
         return NextResponse.json(
           { success: false, error: { code: 'DB_ERROR', message: '청크 저장 실패' } },
           { status: 500 }
         );
       }
 
-      // 4. 데이터셋 상태 업데이트
+      // 4. 데이터셋 청크 카운트 업데이트
       await supabase
         .from('rag_datasets')
-        .update({ chunk_count: chunks.length, status: 'ready' })
+        .update({ chunk_count: chunks.length })
         .eq('id', dataset.id);
 
       return NextResponse.json(
         {
           success: true,
           data: {
-            dataset: { ...dataset, chunk_count: chunks.length, status: 'ready' },
+            dataset: { ...dataset, chunk_count: chunks.length },
             chunksCreated: chunks.length,
           },
         },
