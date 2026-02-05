@@ -3,38 +3,26 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { verifyAccessToken } from '@/lib/auth/tokens';
+import { authenticateRequest } from '@/lib/auth/guards';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 관리자 권한 확인
+// 관리자 권한 확인 (authenticateRequest 사용하여 하드코딩 토큰 지원)
 async function verifyAdmin(request: NextRequest) {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    const auth = await authenticateRequest(request);
+    if (!auth) {
         return null;
     }
 
-    const token = authHeader.substring(7);
-    const payload = await verifyAccessToken(token);
-    if (!payload) {
+    // 관리자 역할 확인 (admin role 또는 ENTERPRISE tier)
+    if (auth.role !== 'admin' && auth.tier !== 'ENTERPRISE') {
         return null;
     }
 
-    // 관리자 역할 확인
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', payload.sub)
-        .single();
-
-    if (!profile || profile.role !== 'admin') {
-        return null;
-    }
-
-    return payload;
+    return auth;
 }
 
 // GET /api/admin/users - 사용자 목록 조회
