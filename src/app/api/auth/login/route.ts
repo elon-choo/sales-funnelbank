@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { COOKIE_CONFIG } from '@/lib/supabase/config';
+import { createRefreshToken } from '@/lib/auth/rotation';
+import { generateAccessToken } from '@/lib/auth/tokens';
 import { LoginRequest, UserTier } from '@/types/auth';
 
 // 하드코딩된 어드민 계정 (백업용)
@@ -114,12 +116,23 @@ export async function POST(request: NextRequest) {
             details: { email },
         });
 
+        // 자체 토큰 시스템 사용 (Supabase Auth 토큰 대신)
+        const accessToken = await generateAccessToken({
+            userId: authData.user.id,
+            email: authData.user.email!,
+            tier: profile.tier as UserTier,
+            role: profile.role || 'user',
+        });
+
+        // 자체 Refresh Token 생성 (refresh_tokens 테이블에 저장됨)
+        const refreshToken = await createRefreshToken(authData.user.id);
+
         // 응답 생성 (프론트엔드 LoginResponse 타입에 맞춤)
         const response = NextResponse.json({
             success: true,
             data: {
-                accessToken: authData.session.access_token,
-                expiresIn: authData.session.expires_in,
+                accessToken: accessToken,
+                expiresIn: 900, // 15분 (자체 토큰 만료 시간)
                 user: {
                     id: authData.user.id,
                     email: authData.user.email,
@@ -132,8 +145,8 @@ export async function POST(request: NextRequest) {
             }
         });
 
-        // Refresh Token을 HttpOnly 쿠키로 설정
-        response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, authData.session.refresh_token, {
+        // 자체 Refresh Token을 HttpOnly 쿠키로 설정
+        response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, refreshToken, {
             ...COOKIE_CONFIG.options,
             maxAge: COOKIE_CONFIG.maxAge.REFRESH_TOKEN,
         });
