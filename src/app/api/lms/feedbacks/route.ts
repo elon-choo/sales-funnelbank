@@ -22,13 +22,13 @@ export async function GET(request: NextRequest) {
             id,
             assignment_id,
             version,
-            ai_model,
-            raw_feedback,
-            parsed_feedback,
-            score,
-            processing_time_ms,
-            token_usage,
-            cost_usd,
+            content,
+            summary,
+            scores,
+            tokens_input,
+            tokens_output,
+            generation_time_ms,
+            status,
             created_at,
             assignments (
               id,
@@ -42,7 +42,6 @@ export async function GET(request: NextRequest) {
               course_weeks (id, week_number, title)
             )
           `, { count: 'exact' })
-          .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
 
@@ -73,10 +72,10 @@ export async function GET(request: NextRequest) {
           id,
           assignment_id,
           version,
-          ai_model,
-          raw_feedback,
-          parsed_feedback,
-          score,
+          content,
+          summary,
+          scores,
+          status,
           created_at,
           assignments!inner (
             id,
@@ -90,7 +89,6 @@ export async function GET(request: NextRequest) {
           )
         `, { count: 'exact' })
         .eq('assignments.user_id', auth.userId)  // 핵심: API 레벨 user_id 필터 (JOIN)
-        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 

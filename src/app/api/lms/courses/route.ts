@@ -1,7 +1,6 @@
 // src/app/api/lms/courses/route.ts
 // 기수(Course) 목록 조회 및 생성 API
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { withLmsAuth, withLmsAdminAuth } from '@/lib/lms/guards';
 import {
   withCache,

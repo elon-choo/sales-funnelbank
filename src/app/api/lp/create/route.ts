@@ -1,7 +1,7 @@
 
 // src/app/api/lp/create/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { authenticateRequest } from '@/lib/auth/guards';
 import { z } from 'zod';
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
         const { title, content } = validation.data;
 
-        const supabase = await createClient();
+        const supabase = createAdminClient();
 
         const { data, error } = await supabase
             .from('landing_pages')
