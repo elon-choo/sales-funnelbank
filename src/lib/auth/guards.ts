@@ -5,6 +5,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { verifyCustomJWT } from '@/lib/auth/tokens';
 import type { AuthResult, UserTier, UserRole } from '@/types/auth';
 
 // 하드코딩된 어드민 ID (login/me route와 동일)
@@ -39,7 +40,42 @@ export async function authenticateRequest(
     }
 
     try {
-        // Supabase Auth로 토큰 검증
+        // 1. 자체 발급 JWT 검증 시도 (빠름)
+        const customPayload = await verifyCustomJWT(token);
+        if (customPayload) {
+            // 하드코딩된 어드민 ID인 경우
+            if (customPayload.sub === HARDCODED_ADMIN_ID) {
+                return {
+                    userId: HARDCODED_ADMIN_ID,
+                    email: customPayload.email,
+                    tier: 'ENTERPRISE' as UserTier,
+                    role: 'admin' as UserRole,
+                    isApproved: true,
+                };
+            }
+
+            // 일반 사용자: JWT에서 정보 추출 + DB 검증
+            const adminClient = createAdminClient();
+            const { data: profile } = await adminClient
+                .from('profiles')
+                .select('tier, role, is_approved, deleted_at')
+                .eq('id', customPayload.sub)
+                .single();
+
+            if (!profile || profile.deleted_at || !profile.is_approved) {
+                return null;
+            }
+
+            return {
+                userId: customPayload.sub,
+                email: customPayload.email,
+                tier: profile.tier as UserTier,
+                role: (profile.role || 'user') as UserRole,
+                isApproved: profile.is_approved,
+            };
+        }
+
+        // 2. Supabase Auth 토큰 검증 (Supabase가 발급한 토큰인 경우)
         const supabase = createClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

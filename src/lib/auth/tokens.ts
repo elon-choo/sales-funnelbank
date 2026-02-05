@@ -43,15 +43,52 @@ export async function generateAccessToken(payload: {
 }
 
 /**
+ * 자체 발급 JWT 검증 (jose 사용)
+ */
+export async function verifyCustomJWT(
+    token: string
+): Promise<TokenPayload | null> {
+    try {
+        const secret = getJWTSecret();
+        const { payload } = await jwtVerify(token, secret, {
+            issuer: 'magnetic-sales-webapp',
+            audience: 'magnetic-sales-api',
+        });
+
+        if (!payload.sub || !payload.email) {
+            return null;
+        }
+
+        return {
+            sub: payload.sub,
+            email: payload.email as string,
+            tier: (payload.tier as UserTier) || 'FREE',
+            role: (payload.role as UserRole) || 'user',
+            iat: payload.iat || 0,
+            exp: payload.exp || 0,
+        };
+    } catch {
+        // 자체 JWT가 아니면 null 반환 (Supabase 토큰일 수 있음)
+        return null;
+    }
+}
+
+/**
  * Access Token 검증
- * - Supabase Auth getUser() 사용 (가장 안정적)
- * - 만료, 서명 검증은 Supabase가 처리
+ * - 1. 자체 발급 JWT 먼저 검증 (빠름)
+ * - 2. 실패 시 Supabase Auth getUser() 시도
  */
 export async function verifyAccessToken(
     token: string
 ): Promise<TokenPayload | null> {
+    // 1. 자체 발급 JWT 검증 시도
+    const customPayload = await verifyCustomJWT(token);
+    if (customPayload) {
+        return customPayload;
+    }
+
+    // 2. Supabase Auth 토큰 검증
     try {
-        // Supabase에서 직접 토큰 검증
         const supabase = createClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
