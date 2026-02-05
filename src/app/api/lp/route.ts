@@ -1,6 +1,6 @@
 // src/app/api/lp/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { authenticateRequest } from '@/lib/auth/guards';
 
 // GET /api/lp - 사용자의 랜딩페이지 목록 조회
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
         const offset = parseInt(searchParams.get('offset') || '0');
         const status = searchParams.get('status'); // 'draft', 'published', 'archived' or null for all
 
-        const supabase = await createClient();
+        const supabase = createAdminClient();
 
         let query = supabase
             .from('landing_pages')

@@ -1,7 +1,7 @@
 
 // src/app/api/lp/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { authenticateRequest } from '@/lib/auth/guards';
 
 export async function GET(
@@ -12,7 +12,7 @@ export async function GET(
         const { id } = await params;
         const auth = await authenticateRequest(request);
 
-        const supabase = await createClient();
+        const supabase = createAdminClient();
         const query = supabase
             .from('landing_pages')
             .select('*')
@@ -61,7 +61,7 @@ export async function PUT(
         const body = await request.json();
         // Basic validation that title/content exists could be good here
 
-        const supabase = await createClient();
+        const supabase = createAdminClient();
 
         // Update
         const { data, error } = await supabase
@@ -104,7 +104,7 @@ export async function DELETE(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const supabase = await createClient();
+        const supabase = createAdminClient();
 
         const { error } = await supabase
             .from('landing_pages')
