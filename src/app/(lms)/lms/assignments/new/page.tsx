@@ -281,7 +281,7 @@ export default function NewAssignmentPage() {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ content: {}, isDraft: true }),
+            body: JSON.stringify({ content: { _submitMode: 'file', _placeholder: true }, isDraft: true }),
           }
         );
         const draftData = await draftRes.json();
