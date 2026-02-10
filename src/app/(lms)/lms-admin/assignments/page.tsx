@@ -66,6 +66,8 @@ export default function AdminAssignmentsPage() {
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [updatingLimit, setUpdatingLimit] = useState<string | null>(null);
+  const [editingLimit, setEditingLimit] = useState<string | null>(null);
+  const [editLimitValue, setEditLimitValue] = useState<string>('');
   const [regenerating, setRegenerating] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -392,13 +394,50 @@ export default function AdminAssignmentsPage() {
                         >
                           -
                         </button>
-                        <span className="w-8 text-center text-white font-medium text-sm">
-                          {updatingLimit === student.enrollment.id ? (
+                        {updatingLimit === student.enrollment.id ? (
+                          <span className="w-12 text-center">
                             <span className="inline-block w-4 h-4 border-t-2 border-amber-500 rounded-full animate-spin" />
-                          ) : (
-                            student.enrollment.max_submissions_per_week
-                          )}
-                        </span>
+                          </span>
+                        ) : editingLimit === student.enrollment.id ? (
+                          <input
+                            type="number"
+                            min={1}
+                            max={999}
+                            value={editLimitValue}
+                            onChange={(e) => setEditLimitValue(e.target.value)}
+                            onBlur={() => {
+                              const val = parseInt(editLimitValue);
+                              if (val >= 1 && val <= 999 && val !== student.enrollment.max_submissions_per_week) {
+                                handleUpdateLimit(student.enrollment.id, val);
+                              }
+                              setEditingLimit(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const val = parseInt(editLimitValue);
+                                if (val >= 1 && val <= 999 && val !== student.enrollment.max_submissions_per_week) {
+                                  handleUpdateLimit(student.enrollment.id, val);
+                                }
+                                setEditingLimit(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingLimit(null);
+                              }
+                            }}
+                            autoFocus
+                            className="w-14 text-center text-white font-medium text-sm bg-slate-900 border border-amber-500 rounded px-1 py-0.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingLimit(student.enrollment.id);
+                              setEditLimitValue(String(student.enrollment.max_submissions_per_week));
+                            }}
+                            className="w-12 text-center text-white font-medium text-sm hover:bg-slate-700 rounded px-1 py-0.5 transition-colors cursor-text"
+                            title="클릭하여 직접 입력"
+                          >
+                            {student.enrollment.max_submissions_per_week}
+                          </button>
+                        )}
                         <button
                           onClick={() =>
                             handleUpdateLimit(
@@ -408,7 +447,7 @@ export default function AdminAssignmentsPage() {
                           }
                           disabled={
                             updatingLimit === student.enrollment.id ||
-                            student.enrollment.max_submissions_per_week >= 20
+                            student.enrollment.max_submissions_per_week >= 999
                           }
                           className="w-7 h-7 flex items-center justify-center bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white rounded transition-colors text-sm"
                         >

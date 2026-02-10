@@ -10,9 +10,9 @@ export async function PATCH(request: NextRequest) {
       const body = await request.json();
       const { enrollmentId, userId, courseId, maxSubmissionsPerWeek } = body;
 
-      if (!maxSubmissionsPerWeek || typeof maxSubmissionsPerWeek !== 'number' || maxSubmissionsPerWeek < 1 || maxSubmissionsPerWeek > 20) {
+      if (!maxSubmissionsPerWeek || typeof maxSubmissionsPerWeek !== 'number' || maxSubmissionsPerWeek < 1 || maxSubmissionsPerWeek > 999) {
         return NextResponse.json(
-          { success: false, error: { code: 'VALIDATION_ERROR', message: '제출 횟수는 1~20 사이의 숫자여야 합니다' } },
+          { success: false, error: { code: 'VALIDATION_ERROR', message: '제출 횟수는 1~999 사이의 숫자여야 합니다' } },
           { status: 400 }
         );
       }
