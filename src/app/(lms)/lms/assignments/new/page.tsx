@@ -1,8 +1,8 @@
 // src/app/(lms)/lms/assignments/new/page.tsx
-// 과제 제출 폼 페이지
+// 과제 제출 폼 페이지 - 주차 단위 한번에 제출
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -27,11 +27,12 @@ interface WeekInfo {
   assignment_type: string;
 }
 
-interface SubmissionInfo {
-  totalSubmitted: number;
-  maxAllowed: number;
-  remaining: number;
-  canSubmit: boolean;
+interface WeekGroup {
+  weekNumber: number;
+  weeks: WeekInfo[];
+  titles: string[];
+  hasDeadline: string | null;
+  isActive: boolean;
 }
 
 interface UploadedFile {
@@ -40,6 +41,12 @@ interface UploadedFile {
   file_type: string;
   file_size: number;
   url?: string;
+}
+
+// weekId별 필드 모음
+interface WeekFieldGroup {
+  week: WeekInfo;
+  fields: FieldConfig[];
 }
 
 type SubmitMode = 'input' | 'file';
@@ -55,20 +62,48 @@ export default function NewAssignmentPage() {
   const [submitMode, setSubmitMode] = useState<SubmitMode | null>(null);
 
   const [weeks, setWeeks] = useState<WeekInfo[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState<WeekInfo | null>(null);
+  const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState<string>('');
-  const [fields, setFields] = useState<FieldConfig[]>([]);
+
+  // 주차 내 각 과제 유형별 필드
+  const [weekFieldGroups, setWeekFieldGroups] = useState<WeekFieldGroup[]>([]);
+  // formData: weekId::fieldKey -> value
   const [formData, setFormData] = useState<Record<string, string>>({});
+
   const [loading, setLoading] = useState(true);
   const [loadingFields, setLoadingFields] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedDraft, setSavedDraft] = useState(false);
-  const [submissionInfo, setSubmissionInfo] = useState<SubmissionInfo | null>(null);
+
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [lastAssignmentId, setLastAssignmentId] = useState<string | null>(null);
+  const [draftAssignmentId, setDraftAssignmentId] = useState<string | null>(null);
+
+  // 주차별로 그룹핑
+  const weekGroups = useMemo<WeekGroup[]>(() => {
+    const map = new Map<number, WeekInfo[]>();
+    weeks.forEach(w => {
+      if (!map.has(w.week_number)) map.set(w.week_number, []);
+      map.get(w.week_number)!.push(w);
+    });
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([num, wks]) => ({
+        weekNumber: num,
+        weeks: wks,
+        titles: wks.map(w => w.title),
+        hasDeadline: wks.find(w => w.deadline)?.deadline || null,
+        isActive: wks.some(w => w.is_active),
+      }));
+  }, [weeks]);
+
+  // 선택된 주차의 WeekGroup
+  const selectedGroup = useMemo(
+    () => weekGroups.find(g => g.weekNumber === selectedWeekNumber) || null,
+    [weekGroups, selectedWeekNumber]
+  );
 
   // 주차 목록 로딩
   useEffect(() => {
@@ -103,15 +138,14 @@ export default function NewAssignmentPage() {
           return;
         }
 
-        const weekList = weeksData.data.weeks;
-        setWeeks(weekList);
+        setWeeks(weeksData.data.weeks);
 
-        // URL 파라미터로 주차가 지정되면 바로 선택
+        // URL 파라미터로 주차 번호가 지정되면 바로 선택
         const weekIdParam = searchParams.get('weekId');
         if (weekIdParam) {
-          const target = weekList.find((w: WeekInfo) => w.id === weekIdParam);
+          const target = weeksData.data.weeks.find((w: WeekInfo) => w.id === weekIdParam);
           if (target) {
-            setSelectedWeek(target);
+            setSelectedWeekNumber(target.week_number);
             setStep('select-mode');
           }
         }
@@ -126,67 +160,48 @@ export default function NewAssignmentPage() {
     loadWeeks();
   }, [accessToken, searchParams]);
 
-  // 주차 선택 시 필드 및 제출 현황 로딩
+  // 주차 선택 시 → 해당 주차의 모든 과제 유형 필드 로딩
   useEffect(() => {
-    const loadFieldsAndSubmissions = async () => {
-      if (!selectedWeek || !accessToken || !courseId) return;
+    const loadAllFieldsForWeek = async () => {
+      if (!selectedGroup || !accessToken || !courseId) return;
 
       setLoadingFields(true);
       setError(null);
-      setFields([]);
+      setWeekFieldGroups([]);
       setSavedDraft(false);
       setUploadedFiles([]);
-      setLastAssignmentId(null);
+      setDraftAssignmentId(null);
 
       try {
-        const [configRes, assignRes] = await Promise.all([
-          fetch(`/api/lms/weeks/${selectedWeek.id}/content`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }),
-          fetch(`/api/lms/assignments?weekId=${selectedWeek.id}`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }),
-        ]);
+        // 주차 내 모든 과제 유형의 필드를 병렬로 로드
+        const results = await Promise.all(
+          selectedGroup.weeks.map(async (week) => {
+            const res = await fetch(`/api/lms/weeks/${week.id}/content`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            const data = await res.json();
+            const rawConfigs = data.data?.configs || data.data?.fieldConfigs || [];
+            const sorted = rawConfigs.sort(
+              (a: FieldConfig, b: FieldConfig) => a.sort_order - b.sort_order
+            );
+            return { week, fields: sorted } as WeekFieldGroup;
+          })
+        );
 
-        const configData = await configRes.json();
-        const assignData = await assignRes.json();
+        setWeekFieldGroups(results);
 
-        const rawConfigs = configData.data?.configs || configData.data?.fieldConfigs;
-        if (configData.success && rawConfigs) {
-          const sorted = rawConfigs.sort(
-            (a: FieldConfig, b: FieldConfig) => a.sort_order - b.sort_order
-          );
-          setFields(sorted);
-
-          const draftKey = `assignment_draft_${selectedWeek.id}`;
-          const saved = localStorage.getItem(draftKey);
-          if (saved) {
-            try {
-              setFormData(JSON.parse(saved));
-              setSavedDraft(true);
-            } catch {
-              // invalid draft
-            }
-          } else {
+        // localStorage 초안 복원
+        const draftKey = `assignment_draft_week_${selectedGroup.weekNumber}`;
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          try {
+            setFormData(JSON.parse(saved));
+            setSavedDraft(true);
+          } catch {
             setFormData({});
           }
-        }
-
-        const assignments = assignData.data?.assignments || [];
-        const submittedCount = assignments.filter(
-          (a: { status: string }) => a.status === 'submitted' || a.status === 'reviewed'
-        ).length;
-        const maxAllowed = 2;
-
-        setSubmissionInfo({
-          totalSubmitted: submittedCount,
-          maxAllowed,
-          remaining: Math.max(0, maxAllowed - submittedCount),
-          canSubmit: submittedCount < maxAllowed,
-        });
-
-        if (assignments.length > 0) {
-          setLastAssignmentId(assignments[0].id);
+        } else {
+          setFormData({});
         }
       } catch (err) {
         setError('필드 설정을 불러오는데 실패했습니다.');
@@ -196,18 +211,18 @@ export default function NewAssignmentPage() {
       }
     };
 
-    loadFieldsAndSubmissions();
-  }, [selectedWeek, accessToken, courseId]);
+    loadAllFieldsForWeek();
+  }, [selectedGroup, accessToken, courseId]);
 
-  // 자동 저장 (localStorage) - 직접 입력 모드일 때만
+  // 자동 저장 (localStorage)
   useEffect(() => {
-    if (!selectedWeek || Object.keys(formData).length === 0 || submitMode !== 'input') return;
-    const draftKey = `assignment_draft_${selectedWeek.id}`;
+    if (selectedWeekNumber === null || Object.keys(formData).length === 0 || submitMode !== 'input') return;
+    const draftKey = `assignment_draft_week_${selectedWeekNumber}`;
     localStorage.setItem(draftKey, JSON.stringify(formData));
-  }, [formData, selectedWeek, submitMode]);
+  }, [formData, selectedWeekNumber, submitMode]);
 
-  const handleSelectWeek = (week: WeekInfo) => {
-    setSelectedWeek(week);
+  const handleSelectWeekNumber = (weekNum: number) => {
+    setSelectedWeekNumber(weekNum);
     setFormData({});
     setSubmitMode(null);
     setStep('select-mode');
@@ -224,49 +239,55 @@ export default function NewAssignmentPage() {
       setSubmitMode(null);
     } else if (step === 'select-mode') {
       setStep('select-week');
-      setSelectedWeek(null);
-      setSubmissionInfo(null);
+      setSelectedWeekNumber(null);
     } else {
       router.push('/lms/assignments');
     }
   };
 
-  const handleFieldChange = (key: string, value: string) => {
+  // formKey: weekId::fieldKey
+  const makeFormKey = (weekId: string, fieldKey: string) => `${weekId}::${fieldKey}`;
+
+  const handleFieldChange = (weekId: string, fieldKey: string, value: string) => {
+    const key = makeFormKey(weekId, fieldKey);
     setFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const getFieldValue = (weekId: string, fieldKey: string) => {
+    return formData[makeFormKey(weekId, fieldKey)] || '';
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !accessToken) return;
+    if (!file || !accessToken || !selectedGroup || !courseId) return;
 
     if (file.size > 10 * 1024 * 1024) {
       setError('파일 크기는 10MB를 초과할 수 없습니다.');
       return;
     }
 
-    let assignmentId = lastAssignmentId;
+    let assignmentId = draftAssignmentId;
+    const firstWeek = selectedGroup.weeks[0];
 
-    if (!assignmentId && selectedWeek && courseId) {
+    // draft 과제 생성 (파일 업로드에 필요)
+    if (!assignmentId) {
       setUploading(true);
       try {
         const draftRes = await fetch(
-          `/api/lms/assignments?courseId=${courseId}&weekId=${selectedWeek.id}`,
+          `/api/lms/assignments?courseId=${courseId}&weekId=${firstWeek.id}`,
           {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({
-              content: {},
-              isDraft: true,
-            }),
+            body: JSON.stringify({ content: {}, isDraft: true }),
           }
         );
         const draftData = await draftRes.json();
         if (draftData.success) {
           assignmentId = draftData.data.assignment.id;
-          setLastAssignmentId(assignmentId);
+          setDraftAssignmentId(assignmentId);
         } else {
           setError('파일 업로드를 위한 과제 초안 생성에 실패했습니다.');
           setUploading(false);
@@ -288,15 +309,14 @@ export default function NewAssignmentPage() {
     setError(null);
 
     try {
-      const formDataObj = new FormData();
-      formDataObj.append('file', file);
+      const fd = new FormData();
+      fd.append('file', file);
 
       const res = await fetch(`/api/lms/assignments/${assignmentId}/files`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
-        body: formDataObj,
+        body: fd,
       });
-
       const result = await res.json();
 
       if (!res.ok || !result.success) {
@@ -313,10 +333,10 @@ export default function NewAssignmentPage() {
   };
 
   const handleFileDelete = async (fileId: string) => {
-    if (!lastAssignmentId || !accessToken) return;
+    if (!draftAssignmentId || !accessToken) return;
 
     try {
-      const res = await fetch(`/api/lms/assignments/${lastAssignmentId}/files`, {
+      const res = await fetch(`/api/lms/assignments/${draftAssignmentId}/files`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -324,7 +344,6 @@ export default function NewAssignmentPage() {
         },
         body: JSON.stringify({ fileId }),
       });
-
       const result = await res.json();
       if (result.success) {
         setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
@@ -335,14 +354,9 @@ export default function NewAssignmentPage() {
   };
 
   const handleSubmit = async (isDraft: boolean) => {
-    if (!selectedWeek || !accessToken || !courseId) return;
+    if (!selectedGroup || !accessToken || !courseId) return;
 
-    if (!isDraft && submissionInfo && !submissionInfo.canSubmit) {
-      setError('이 주차의 최대 제출 횟수(2회)를 초과했습니다.');
-      return;
-    }
-
-    // 파일 모드: 파일이 없으면 제출 불가
+    // 파일 모드: 파일 필수
     if (submitMode === 'file' && !isDraft && uploadedFiles.length === 0) {
       setError('파일을 1개 이상 첨부해주세요.');
       return;
@@ -350,12 +364,19 @@ export default function NewAssignmentPage() {
 
     // 입력 모드: 필수 필드 검증
     if (submitMode === 'input' && !isDraft) {
-      const missing = fields
-        .filter(f => f.is_required && (!formData[f.field_key] || formData[f.field_key].trim() === ''))
-        .map(f => f.field_label);
-
-      if (missing.length > 0) {
-        setError(`다음 항목을 입력해주세요: ${missing.join(', ')}`);
+      const allMissing: string[] = [];
+      weekFieldGroups.forEach(({ week, fields }) => {
+        fields.forEach(f => {
+          if (f.is_required) {
+            const val = getFieldValue(week.id, f.field_key);
+            if (!val || val.trim() === '') {
+              allMissing.push(`[${getAssignmentTypeLabel(week.assignment_type)}] ${f.field_label}`);
+            }
+          }
+        });
+      });
+      if (allMissing.length > 0) {
+        setError(`다음 항목을 입력해주세요: ${allMissing.join(', ')}`);
         return;
       }
     }
@@ -364,42 +385,46 @@ export default function NewAssignmentPage() {
     setError(null);
 
     try {
-      const content: Record<string, unknown> = submitMode === 'input'
-        ? { ...formData }
-        : { submitMode: 'file' };
+      // 각 과제 유형별로 제출
+      const fileInfo = uploadedFiles.length > 0
+        ? uploadedFiles.map(f => ({ id: f.id, name: f.file_name, type: f.file_type, size: f.file_size }))
+        : undefined;
 
-      if (uploadedFiles.length > 0) {
-        content.attachedFiles = uploadedFiles.map(f => ({
-          id: f.id,
-          name: f.file_name,
-          type: f.file_type,
-          size: f.file_size,
-        }));
-      }
+      for (const { week, fields } of weekFieldGroups) {
+        const content: Record<string, unknown> = {};
 
-      const response = await fetch(
-        `/api/lms/assignments?courseId=${courseId}&weekId=${selectedWeek.id}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            content,
-            isDraft,
-          }),
+        if (submitMode === 'input') {
+          fields.forEach(f => {
+            content[f.field_key] = getFieldValue(week.id, f.field_key);
+          });
+        } else {
+          content.submitMode = 'file';
         }
-      );
 
-      const result = await response.json();
+        if (fileInfo) {
+          content.attachedFiles = fileInfo;
+        }
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || '제출에 실패했습니다.');
+        const response = await fetch(
+          `/api/lms/assignments?courseId=${courseId}&weekId=${week.id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ content, isDraft }),
+          }
+        );
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error?.message || `${week.title} 제출에 실패했습니다.`);
+        }
       }
 
-      if (!isDraft) {
-        localStorage.removeItem(`assignment_draft_${selectedWeek.id}`);
+      if (!isDraft && selectedWeekNumber !== null) {
+        localStorage.removeItem(`assignment_draft_week_${selectedWeekNumber}`);
       }
 
       router.push('/lms/assignments');
@@ -425,13 +450,16 @@ export default function NewAssignmentPage() {
     }
   };
 
-  const getAssignmentTypeColor = (type: string) => {
+  const getTypeAccentColor = (type: string) => {
     switch (type) {
-      case 'plan': return 'from-purple-600/30 to-purple-800/30 border-purple-500/30';
-      case 'funnel': return 'from-pink-600/30 to-pink-800/30 border-pink-500/30';
-      default: return 'from-slate-600/30 to-slate-800/30 border-slate-500/30';
+      case 'plan': return 'purple';
+      case 'funnel': return 'pink';
+      default: return 'slate';
     }
   };
+
+  // 전체 필드 수 계산
+  const totalFieldCount = weekFieldGroups.reduce((sum, g) => sum + g.fields.length, 0);
 
   if (loading) {
     return (
@@ -441,7 +469,7 @@ export default function NewAssignmentPage() {
     );
   }
 
-  if (error && !selectedWeek && step === 'select-week') {
+  if (error && selectedWeekNumber === null && step === 'select-week') {
     return (
       <div className="max-w-3xl mx-auto">
         <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-6 text-center">
@@ -462,32 +490,30 @@ export default function NewAssignmentPage() {
       {/* Progress indicator */}
       <div className="flex items-center gap-2 text-sm">
         <button
-          onClick={() => { setStep('select-week'); setSelectedWeek(null); setSubmitMode(null); }}
+          onClick={() => { setStep('select-week'); setSelectedWeekNumber(null); setSubmitMode(null); }}
           className={`px-3 py-1.5 rounded-full transition-colors ${
             step === 'select-week'
               ? 'bg-purple-600 text-white'
-              : selectedWeek ? 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30' : 'bg-slate-700 text-slate-400'
+              : selectedWeekNumber !== null ? 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30' : 'bg-slate-700 text-slate-400'
           }`}
         >
-          1. 과제 선택
+          1. 주차 선택
         </button>
         <span className="text-slate-600">&rarr;</span>
         <button
-          onClick={() => { if (selectedWeek) { setStep('select-mode'); setSubmitMode(null); } }}
+          onClick={() => { if (selectedWeekNumber !== null) { setStep('select-mode'); setSubmitMode(null); } }}
           className={`px-3 py-1.5 rounded-full transition-colors ${
             step === 'select-mode'
               ? 'bg-purple-600 text-white'
               : submitMode ? 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30' : 'bg-slate-700 text-slate-400'
           }`}
-          disabled={!selectedWeek}
+          disabled={selectedWeekNumber === null}
         >
           2. 제출 방법
         </button>
         <span className="text-slate-600">&rarr;</span>
         <span className={`px-3 py-1.5 rounded-full ${
-          step === 'form'
-            ? 'bg-purple-600 text-white'
-            : 'bg-slate-700 text-slate-400'
+          step === 'form' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400'
         }`}>
           3. 작성 & 제출
         </span>
@@ -500,47 +526,53 @@ export default function NewAssignmentPage() {
         </div>
       )}
 
-      {/* ========== STEP 1: 과제 선택 ========== */}
+      {/* ========== STEP 1: 주차 선택 ========== */}
       {step === 'select-week' && (
         <>
           <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 rounded-2xl p-6 border border-purple-500/20">
             <p className="text-sm text-purple-300">{courseName}</p>
-            <h1 className="text-2xl font-bold text-white mt-1">과제 선택</h1>
-            <p className="text-slate-400 text-sm mt-2">제출할 주차와 과제 유형을 선택하세요.</p>
+            <h1 className="text-2xl font-bold text-white mt-1">주차 선택</h1>
+            <p className="text-slate-400 text-sm mt-2">제출할 주차를 선택하세요. 해당 주차의 모든 과제를 한번에 제출합니다.</p>
           </div>
 
           <div className="grid gap-4">
-            {weeks.map(week => (
+            {weekGroups.map(group => (
               <button
-                key={week.id}
-                onClick={() => handleSelectWeek(week)}
-                className={`w-full text-left p-5 rounded-xl border bg-gradient-to-r transition-all hover:scale-[1.01] ${getAssignmentTypeColor(week.assignment_type)}`}
+                key={group.weekNumber}
+                onClick={() => handleSelectWeekNumber(group.weekNumber)}
+                className="w-full text-left p-5 rounded-xl border bg-gradient-to-r from-purple-600/20 to-pink-600/20 border-purple-500/20 transition-all hover:scale-[1.01] hover:border-purple-500/40"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-slate-300">
-                        {week.week_number}주차
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-bold px-3 py-1 rounded-full bg-purple-600/30 text-purple-300">
+                        {group.weekNumber}주차
                       </span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        week.assignment_type === 'plan'
-                          ? 'bg-purple-500/20 text-purple-300'
-                          : week.assignment_type === 'funnel'
-                          ? 'bg-pink-500/20 text-pink-300'
-                          : 'bg-slate-500/20 text-slate-300'
-                      }`}>
-                        {getAssignmentTypeLabel(week.assignment_type)}
-                      </span>
-                      {!week.is_active && (
+                      {!group.isActive && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-500">
                           비활성
                         </span>
                       )}
                     </div>
-                    <h3 className="text-lg font-semibold text-white">{week.title}</h3>
-                    {week.deadline && (
-                      <p className="text-xs text-slate-400 mt-1">
-                        마감: {new Date(week.deadline).toLocaleString('ko-KR')}
+                    <div className="space-y-1">
+                      {group.weeks.map(w => (
+                        <div key={w.id} className="flex items-center gap-2">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            w.assignment_type === 'plan'
+                              ? 'bg-purple-500/20 text-purple-300'
+                              : w.assignment_type === 'funnel'
+                              ? 'bg-pink-500/20 text-pink-300'
+                              : 'bg-slate-500/20 text-slate-300'
+                          }`}>
+                            {getAssignmentTypeLabel(w.assignment_type)}
+                          </span>
+                          <span className="text-white text-sm">{w.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {group.hasDeadline && (
+                      <p className="text-xs text-slate-400 mt-2">
+                        마감: {new Date(group.hasDeadline).toLocaleString('ko-KR')}
                       </p>
                     )}
                   </div>
@@ -564,52 +596,20 @@ export default function NewAssignmentPage() {
       )}
 
       {/* ========== STEP 2: 제출 방법 선택 ========== */}
-      {step === 'select-mode' && selectedWeek && (
+      {step === 'select-mode' && selectedGroup && (
         <>
           <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 rounded-2xl p-6 border border-purple-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-300">{courseName}</p>
-                <h1 className="text-2xl font-bold text-white mt-1">제출 방법 선택</h1>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-slate-300">
-                    {selectedWeek.week_number}주차
-                  </span>
-                  <span className="text-white font-medium">{selectedWeek.title}</span>
-                </div>
-              </div>
-              {submissionInfo && (
-                <div className={`px-4 py-2 rounded-xl text-center ${
-                  submissionInfo.canSubmit
-                    ? 'bg-green-600/20 border border-green-500/30'
-                    : 'bg-red-600/20 border border-red-500/30'
-                }`}>
-                  <p className="text-xs text-slate-400">남은 제출</p>
-                  <p className={`text-2xl font-bold ${
-                    submissionInfo.canSubmit ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {submissionInfo.remaining}
-                    <span className="text-sm text-slate-500">/{submissionInfo.maxAllowed}</span>
-                  </p>
-                </div>
-              )}
+            <p className="text-sm text-purple-300">{courseName}</p>
+            <h1 className="text-2xl font-bold text-white mt-1">제출 방법 선택</h1>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-sm font-bold px-3 py-1 rounded-full bg-purple-600/30 text-purple-300">
+                {selectedGroup.weekNumber}주차
+              </span>
+              <span className="text-slate-400 text-sm">
+                {selectedGroup.weeks.map(w => w.title).join(' + ')}
+              </span>
             </div>
           </div>
-
-          {/* Submission limit warning */}
-          {submissionInfo && !submissionInfo.canSubmit && (
-            <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4">
-              <p className="text-red-400 text-sm font-medium">
-                이 과제의 최대 제출 횟수(2회)를 모두 사용했습니다.
-              </p>
-              <button
-                onClick={() => router.push('/lms/feedbacks')}
-                className="mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition-colors"
-              >
-                피드백 확인하기
-              </button>
-            </div>
-          )}
 
           {loadingFields ? (
             <div className="flex items-center justify-center h-32">
@@ -620,8 +620,7 @@ export default function NewAssignmentPage() {
               {/* 직접 입력 */}
               <button
                 onClick={() => handleSelectMode('input')}
-                disabled={submissionInfo ? !submissionInfo.canSubmit : false}
-                className="group p-6 rounded-xl border-2 border-purple-500/30 bg-purple-900/10 hover:bg-purple-900/30 hover:border-purple-500/60 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                className="group p-6 rounded-xl border-2 border-purple-500/30 bg-purple-900/10 hover:bg-purple-900/30 hover:border-purple-500/60 transition-all text-left"
               >
                 <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-600/30 transition-colors">
                   <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -631,15 +630,14 @@ export default function NewAssignmentPage() {
                 <h3 className="text-lg font-semibold text-white mb-1">직접 입력</h3>
                 <p className="text-sm text-slate-400">
                   항목별로 직접 내용을 작성하여 제출합니다.
-                  {fields.length > 0 && ` (${fields.length}개 항목)`}
+                  {totalFieldCount > 0 && ` (총 ${totalFieldCount}개 항목)`}
                 </p>
               </button>
 
               {/* 파일 첨부 */}
               <button
                 onClick={() => handleSelectMode('file')}
-                disabled={submissionInfo ? !submissionInfo.canSubmit : false}
-                className="group p-6 rounded-xl border-2 border-pink-500/30 bg-pink-900/10 hover:bg-pink-900/30 hover:border-pink-500/60 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                className="group p-6 rounded-xl border-2 border-pink-500/30 bg-pink-900/10 hover:bg-pink-900/30 hover:border-pink-500/60 transition-all text-left"
               >
                 <div className="w-12 h-12 bg-pink-600/20 rounded-xl flex items-center justify-center mb-4 group-hover:bg-pink-600/30 transition-colors">
                   <svg className="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -659,59 +657,46 @@ export default function NewAssignmentPage() {
               onClick={handleBack}
               className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
             >
-              &larr; 과제 선택으로
+              &larr; 주차 선택으로
             </button>
           </div>
         </>
       )}
 
       {/* ========== STEP 3: 작성 & 제출 ========== */}
-      {step === 'form' && selectedWeek && submitMode && (
+      {step === 'form' && selectedGroup && submitMode && (
         <>
           {/* Header */}
           <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 rounded-2xl p-6 border border-purple-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-300">{courseName}</p>
-                <h1 className="text-2xl font-bold text-white mt-1">
-                  {selectedWeek.week_number}주차 - {selectedWeek.title}
-                </h1>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    submitMode === 'input'
-                      ? 'bg-purple-500/20 text-purple-300'
-                      : 'bg-pink-500/20 text-pink-300'
-                  }`}>
-                    {submitMode === 'input' ? '직접 입력' : '파일 첨부'}
-                  </span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    selectedWeek.assignment_type === 'plan'
-                      ? 'bg-purple-500/20 text-purple-300'
-                      : 'bg-pink-500/20 text-pink-300'
-                  }`}>
-                    {getAssignmentTypeLabel(selectedWeek.assignment_type)}
-                  </span>
-                </div>
-              </div>
-              {submissionInfo && (
-                <div className={`px-4 py-2 rounded-xl text-center ${
-                  submissionInfo.canSubmit
-                    ? 'bg-green-600/20 border border-green-500/30'
-                    : 'bg-red-600/20 border border-red-500/30'
+            <div>
+              <p className="text-sm text-purple-300">{courseName}</p>
+              <h1 className="text-2xl font-bold text-white mt-1">
+                {selectedGroup.weekNumber}주차 과제
+              </h1>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  submitMode === 'input'
+                    ? 'bg-purple-500/20 text-purple-300'
+                    : 'bg-pink-500/20 text-pink-300'
                 }`}>
-                  <p className="text-xs text-slate-400">남은 제출</p>
-                  <p className={`text-2xl font-bold ${
-                    submissionInfo.canSubmit ? 'text-green-400' : 'text-red-400'
+                  {submitMode === 'input' ? '직접 입력' : '파일 첨부'}
+                </span>
+                {selectedGroup.weeks.map(w => (
+                  <span key={w.id} className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    w.assignment_type === 'plan'
+                      ? 'bg-purple-500/20 text-purple-300'
+                      : w.assignment_type === 'funnel'
+                      ? 'bg-pink-500/20 text-pink-300'
+                      : 'bg-slate-500/20 text-slate-300'
                   }`}>
-                    {submissionInfo.remaining}
-                    <span className="text-sm text-slate-500">/{submissionInfo.maxAllowed}</span>
-                  </p>
-                </div>
-              )}
+                    {w.title}
+                  </span>
+                ))}
+              </div>
             </div>
-            {selectedWeek.deadline && (
+            {selectedGroup.hasDeadline && (
               <p className="text-xs text-slate-400 mt-3">
-                마감: {new Date(selectedWeek.deadline).toLocaleString('ko-KR')}
+                마감: {new Date(selectedGroup.hasDeadline).toLocaleString('ko-KR')}
               </p>
             )}
             {savedDraft && submitMode === 'input' && (
@@ -728,61 +713,95 @@ export default function NewAssignmentPage() {
                 <div className="flex items-center justify-center h-32">
                   <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-purple-500" />
                 </div>
-              ) : fields.length > 0 ? (
-                <div className="space-y-6">
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="bg-slate-800/50 rounded-xl p-6 border border-slate-700"
-                    >
-                      <div className="flex items-start gap-3 mb-3">
-                        <span className="w-8 h-8 bg-purple-600/30 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-bold text-purple-400">
-                          {index + 1}
-                        </span>
-                        <div className="flex-1">
-                          <label className="block text-white font-medium mb-1">
-                            {field.field_label}
-                            {field.is_required && (
-                              <span className="text-red-400 ml-1">*</span>
-                            )}
-                          </label>
-                          {field.help_text && (
-                            <p className="text-slate-400 text-sm mb-3">{field.help_text}</p>
-                          )}
+              ) : weekFieldGroups.length > 0 ? (
+                <div className="space-y-8">
+                  {weekFieldGroups.map(({ week, fields }) => {
+                    const accent = getTypeAccentColor(week.assignment_type);
+                    return (
+                      <div key={week.id}>
+                        {/* 과제 유형 헤더 */}
+                        {weekFieldGroups.length > 1 && (
+                          <div className={`flex items-center gap-2 mb-4 pb-3 border-b ${
+                            accent === 'purple' ? 'border-purple-500/30' : accent === 'pink' ? 'border-pink-500/30' : 'border-slate-500/30'
+                          }`}>
+                            <div className={`w-3 h-3 rounded-full ${
+                              accent === 'purple' ? 'bg-purple-500' : accent === 'pink' ? 'bg-pink-500' : 'bg-slate-500'
+                            }`} />
+                            <h2 className="text-lg font-bold text-white">
+                              {week.title}
+                            </h2>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              accent === 'purple' ? 'bg-purple-500/20 text-purple-300' : accent === 'pink' ? 'bg-pink-500/20 text-pink-300' : 'bg-slate-500/20 text-slate-300'
+                            }`}>
+                              {getAssignmentTypeLabel(week.assignment_type)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="space-y-5">
+                          {fields.map((field, index) => (
+                            <div
+                              key={field.id}
+                              className={`bg-slate-800/50 rounded-xl p-6 border ${
+                                accent === 'purple' ? 'border-purple-900/30' : accent === 'pink' ? 'border-pink-900/30' : 'border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-start gap-3 mb-3">
+                                <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-bold ${
+                                  accent === 'purple' ? 'bg-purple-600/30 text-purple-400' : accent === 'pink' ? 'bg-pink-600/30 text-pink-400' : 'bg-slate-600/30 text-slate-400'
+                                }`}>
+                                  {index + 1}
+                                </span>
+                                <div className="flex-1">
+                                  <label className="block text-white font-medium mb-1">
+                                    {field.field_label}
+                                    {field.is_required && <span className="text-red-400 ml-1">*</span>}
+                                  </label>
+                                  {field.help_text && (
+                                    <p className="text-slate-400 text-sm mb-3">{field.help_text}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {field.field_type === 'textarea' ? (
+                                <textarea
+                                  value={getFieldValue(week.id, field.field_key)}
+                                  onChange={e => handleFieldChange(week.id, field.field_key, e.target.value)}
+                                  placeholder={field.placeholder}
+                                  rows={5}
+                                  disabled={submitting}
+                                  className={`w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent resize-y min-h-[120px] disabled:opacity-50 ${
+                                    accent === 'purple' ? 'focus:ring-purple-500' : accent === 'pink' ? 'focus:ring-pink-500' : 'focus:ring-slate-500'
+                                  }`}
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={getFieldValue(week.id, field.field_key)}
+                                  onChange={e => handleFieldChange(week.id, field.field_key, e.target.value)}
+                                  placeholder={field.placeholder}
+                                  disabled={submitting}
+                                  className={`w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent disabled:opacity-50 ${
+                                    accent === 'purple' ? 'focus:ring-purple-500' : accent === 'pink' ? 'focus:ring-pink-500' : 'focus:ring-slate-500'
+                                  }`}
+                                />
+                              )}
+
+                              {getFieldValue(week.id, field.field_key) && (
+                                <p className="text-xs text-slate-500 mt-2 text-right">
+                                  {getFieldValue(week.id, field.field_key).length}자
+                                </p>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       </div>
-
-                      {field.field_type === 'textarea' ? (
-                        <textarea
-                          value={formData[field.field_key] || ''}
-                          onChange={e => handleFieldChange(field.field_key, e.target.value)}
-                          placeholder={field.placeholder}
-                          rows={5}
-                          disabled={submitting || (submissionInfo ? !submissionInfo.canSubmit : false)}
-                          className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-y min-h-[120px] disabled:opacity-50"
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData[field.field_key] || ''}
-                          onChange={e => handleFieldChange(field.field_key, e.target.value)}
-                          placeholder={field.placeholder}
-                          disabled={submitting || (submissionInfo ? !submissionInfo.canSubmit : false)}
-                          className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50"
-                        />
-                      )}
-
-                      {formData[field.field_key] && (
-                        <p className="text-xs text-slate-500 mt-2 text-right">
-                          {formData[field.field_key].length}자
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="bg-slate-800/50 rounded-xl p-8 border border-slate-700 text-center">
-                  <p className="text-slate-400">이 과제에 대한 입력 필드가 설정되지 않았습니다.</p>
+                  <p className="text-slate-400">이 주차에 대한 입력 필드가 설정되지 않았습니다.</p>
                 </div>
               )}
             </>
@@ -795,13 +814,12 @@ export default function NewAssignmentPage() {
                 <svg className="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                파일 업로드
+                {selectedGroup.weekNumber}주차 파일 업로드
               </h3>
               <p className="text-slate-400 text-sm mb-6">
                 PDF, 이미지(JPG/PNG/GIF/WebP), Word, TXT, MD 파일을 첨부할 수 있습니다. (최대 10MB, 5개까지)
               </p>
 
-              {/* Uploaded files list */}
               {uploadedFiles.length > 0 && (
                 <div className="space-y-2 mb-6">
                   {uploadedFiles.map(file => (
@@ -828,7 +846,6 @@ export default function NewAssignmentPage() {
                 </div>
               )}
 
-              {/* Upload area */}
               {uploadedFiles.length < 5 && (
                 <div>
                   <input
@@ -841,7 +858,7 @@ export default function NewAssignmentPage() {
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading || submitting || (submissionInfo ? !submissionInfo.canSubmit : false)}
+                    disabled={uploading || submitting}
                     className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-slate-600 hover:border-pink-500/50 rounded-xl text-slate-400 hover:text-pink-400 transition-colors disabled:opacity-50 w-full"
                   >
                     {uploading ? (
@@ -858,8 +875,7 @@ export default function NewAssignmentPage() {
                         <span className="text-xs text-slate-500">
                           {uploadedFiles.length > 0
                             ? `${uploadedFiles.length}/5개 첨부됨`
-                            : '클릭하여 파일 선택'
-                          }
+                            : '클릭하여 파일 선택'}
                         </span>
                       </>
                     )}
@@ -897,7 +913,7 @@ export default function NewAssignmentPage() {
               )}
               <button
                 onClick={() => handleSubmit(false)}
-                disabled={submitting || (submissionInfo ? !submissionInfo.canSubmit : false)}
+                disabled={submitting}
                 className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90 text-white font-medium rounded-xl transition-opacity disabled:opacity-50 flex items-center gap-2"
               >
                 {submitting ? (
@@ -906,7 +922,7 @@ export default function NewAssignmentPage() {
                     제출 중...
                   </>
                 ) : (
-                  '과제 제출 & AI 피드백 받기'
+                  `${selectedGroup.weekNumber}주차 과제 제출`
                 )}
               </button>
             </div>
