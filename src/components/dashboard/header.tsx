@@ -34,6 +34,7 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
     const navItems = [
         { href: '/dashboard', label: '대시보드', icon: Icons.home },
         { href: '/chat', label: 'AI 채팅', icon: Icons.message },
+        { href: '/lms/dashboard', label: 'LMS', icon: Icons.bookOpen },
     ];
 
     if (isAdmin) {

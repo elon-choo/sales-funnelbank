@@ -8,7 +8,7 @@ import { SignupRequest } from '@/types/auth';
 export async function POST(request: NextRequest) {
     try {
         const body: SignupRequest = await request.json();
-        const { email, password, fullName, agreeTerms, agreePrivacy, agreeMarketing } = body;
+        const { email, password, fullName, courseType, agreeTerms, agreePrivacy, agreeMarketing } = body;
 
         // 유효성 검사
         if (!email || !password || !fullName || !agreeTerms || !agreePrivacy) {
@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
             full_name: fullName,
             tier: 'FREE',
             role: 'user',
-            is_approved: false, // 관리자 승인 필요
+            course_type: courseType || 'SALES_FUNNEL',
+            is_approved: false,
             agree_marketing: !!agreeMarketing,
         });
 

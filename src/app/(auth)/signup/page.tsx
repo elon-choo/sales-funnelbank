@@ -26,6 +26,7 @@ export default function SignupPage() {
         const password = formData.get('password') as string;
         const fullName = formData.get('fullName') as string;
         const passwordConfirm = formData.get('passwordConfirm') as string;
+        const courseType = formData.get('courseType') as string || 'SALES_FUNNEL';
 
         if (password !== passwordConfirm) {
             setError("비밀번호가 일치하지 않습니다.");
@@ -41,9 +42,10 @@ export default function SignupPage() {
                     email,
                     password,
                     fullName,
+                    courseType,
                     agreeTerms: true,
                     agreePrivacy: true,
-                    agreeMarketing: false // 선택사항
+                    agreeMarketing: false
                 }),
             });
 
@@ -114,6 +116,19 @@ export default function SignupPage() {
                         required
                         className="bg-white/5 border-white/10 text-white"
                     />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="courseType" className="text-gray-300">수강 과정</Label>
+                    <select
+                        id="courseType"
+                        name="courseType"
+                        disabled={isLoading}
+                        className="w-full h-10 rounded-md border bg-white/5 border-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        defaultValue="SALES_FUNNEL"
+                    >
+                        <option value="SALES_FUNNEL" className="bg-slate-900">세일즈 퍼널 마스터클래스</option>
+                        <option value="MAGNETIC_SALES" disabled className="bg-slate-900">마그네틱 세일즈 마스터클래스 (준비중)</option>
+                    </select>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="email" className="text-gray-300">이메일</Label>

@@ -144,8 +144,13 @@ export default function LmsDashboardPage() {
         <h1 className="text-2xl font-bold text-white mb-2">
           안녕하세요, <span className="text-purple-400">{user?.fullName || '수강생'}</span>님!
         </h1>
+        {course && (
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-600/30 text-purple-300 border border-purple-500/30 mb-2">
+            {course.title}
+          </span>
+        )}
         <p className="text-slate-300">
-          {course ? `${course.title}에서 열심히 배우고 계시네요!` : '마그네틱 세일즈 마스터클래스에 오신 것을 환영합니다.'}
+          {course ? '열심히 배우고 계시네요! 과제 제출과 AI 피드백을 확인하세요.' : '마그네틱 세일즈 마스터클래스에 오신 것을 환영합니다.'}
         </p>
       </div>
 

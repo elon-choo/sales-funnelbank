@@ -31,7 +31,7 @@ export async function callClaudeAPI(messages: Anthropic.MessageParam[]) {
     });
 
     return await client.messages.create({
-        model: 'claude-opus-4-5-20251101',
+        model: 'claude-opus-4-6',
         max_tokens: 8192,
         system: SYSTEM_PROMPT,
         messages,

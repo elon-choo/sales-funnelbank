@@ -41,7 +41,9 @@ import {
     Download,
     Upload,
     Globe,
-    Link2
+    Link2,
+    BookOpen,
+    List
 } from "lucide-react";
 
 export const Icons = {
@@ -86,5 +88,7 @@ export const Icons = {
     download: Download,
     upload: Upload,
     globe: Globe,
-    link: Link2
+    link: Link2,
+    bookOpen: BookOpen,
+    list: List
 };

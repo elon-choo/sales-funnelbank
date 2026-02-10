@@ -1,6 +1,7 @@
 
 export type UserTier = 'FREE' | 'PRO' | 'ENTERPRISE';
 export type UserRole = 'user' | 'admin';
+export type CourseType = 'SALES_FUNNEL' | 'MAGNETIC_SALES';
 
 export interface User {
     id: string;
@@ -8,6 +9,7 @@ export interface User {
     fullName: string;
     tier: UserTier;
     role: UserRole;
+    courseType?: CourseType;
     isApproved: boolean;
     createdAt: string;
 }
@@ -37,6 +39,7 @@ export interface SignupRequest {
     email: string;
     password: string;
     fullName: string;
+    courseType?: CourseType;
     agreeTerms: boolean;
     agreePrivacy: boolean;
     agreeMarketing?: boolean;

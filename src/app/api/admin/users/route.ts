@@ -25,6 +25,79 @@ async function verifyAdmin(request: NextRequest) {
     return auth;
 }
 
+// PATCH /api/admin/users - 사용자 과정/기수 변경
+export async function PATCH(request: NextRequest) {
+    try {
+        const admin = await verifyAdmin(request);
+        if (!admin) {
+            return NextResponse.json(
+                { success: false, error: { code: 'FORBIDDEN', message: '관리자 권한이 필요합니다' } },
+                { status: 403 }
+            );
+        }
+
+        const body = await request.json();
+        const { userId, courseType, courseId } = body;
+
+        if (!userId) {
+            return NextResponse.json(
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'userId는 필수입니다' } },
+                { status: 400 }
+            );
+        }
+
+        // 1. course_type 업데이트
+        if (courseType) {
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({ course_type: courseType, updated_at: new Date().toISOString() })
+                .eq('id', userId);
+
+            if (profileError) {
+                return NextResponse.json(
+                    { success: false, error: { code: 'DB_ERROR', message: '과정 변경 실패: ' + profileError.message } },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // 2. 기수(코스) 등록/변경
+        if (courseId) {
+            // 기존 활성 등록 비활성화
+            await supabase
+                .from('course_enrollments')
+                .update({ status: 'dropped' })
+                .eq('user_id', userId)
+                .eq('status', 'active');
+
+            // 새 기수 등록
+            const { error: enrollError } = await supabase
+                .from('course_enrollments')
+                .upsert({
+                    user_id: userId,
+                    course_id: courseId,
+                    status: 'active',
+                    enrolled_at: new Date().toISOString(),
+                }, { onConflict: 'user_id,course_id' });
+
+            if (enrollError) {
+                return NextResponse.json(
+                    { success: false, error: { code: 'DB_ERROR', message: '기수 등록 실패: ' + enrollError.message } },
+                    { status: 500 }
+                );
+            }
+        }
+
+        return NextResponse.json({ success: true, data: { message: '업데이트 완료' } });
+    } catch (error) {
+        console.error('Admin users PATCH error:', error);
+        return NextResponse.json(
+            { success: false, error: { code: 'SERVER_ERROR', message: '서버 오류' } },
+            { status: 500 }
+        );
+    }
+}
+
 // GET /api/admin/users - 사용자 목록 조회
 export async function GET(request: NextRequest) {
     try {
@@ -41,7 +114,7 @@ export async function GET(request: NextRequest) {
 
         let query = supabase
             .from('profiles')
-            .select('id, email, full_name, tier, role, is_approved, created_at, updated_at')
+            .select('id, email, full_name, tier, role, course_type, is_approved, created_at, updated_at')
             .is('deleted_at', null)
             .order('created_at', { ascending: false });
 
@@ -61,9 +134,21 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // 코스 목록 조회 (기수 선택용)
+        const { data: courses } = await supabase
+            .from('courses')
+            .select('id, title, status')
+            .order('created_at', { ascending: false });
+
+        // 수강 등록 현황 조회
+        const { data: enrollments } = await supabase
+            .from('course_enrollments')
+            .select('user_id, course_id, status')
+            .eq('status', 'active');
+
         return NextResponse.json({
             success: true,
-            data: { users }
+            data: { users, courses: courses || [], enrollments: enrollments || [] }
         });
     } catch (error) {
         console.error('Admin users error:', error);

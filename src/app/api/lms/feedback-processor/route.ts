@@ -1,68 +1,31 @@
 // src/app/api/lms/feedback-processor/route.ts
-// 프로덕션 피드백 처리 API - 제출 즉시 처리 + 대기열 자동 관리
-// 크론 의존 제거, 실시간 처리 아키텍처
-
+// 프로덕션 피드백 처리 API - 직접 Claude API 호출
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60; // Vercel Pro: 최대 60초
+export const maxDuration = 300; // Vercel Pro: 최대 5분 (긴 피드백 생성용)
 
-// ============================================================
-// 설정
-// ============================================================
-const MAX_CONCURRENT_JOBS = 10; // 동시 처리 최대 작업 수
-const EDGE_FUNCTION_URL = process.env.SUPABASE_EDGE_FUNCTION_URL || '';
+const MAX_CONCURRENT_JOBS = 5;
 const CRON_SECRET = process.env.CRON_SECRET_FEEDBACK || '';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || CRON_SECRET;
 
-// 재시도 설정 (Exponential Backoff)
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 1000; // 1초
-
-// ============================================================
-// 타입 정의
-// ============================================================
-interface ProcessResult {
-  jobId: string;
-  success: boolean;
-  feedbackId?: string;
-  error?: string;
-  elapsedMs?: number;
-}
-
-interface JobRecord {
-  id: string;
-  assignment_id: string;
-  attempts: number;
-  priority: number;
-  metadata: Record<string, unknown>;
-}
-
-// ============================================================
 // POST /api/lms/feedback-processor
-// 피드백 처리 시작 (과제 제출 후 즉시 호출)
-// ============================================================
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
-  // 인증 검증 (내부 API 호출만 허용)
   const authHeader = request.headers.get('x-internal-secret');
   const isInternalCall = authHeader === INTERNAL_API_SECRET;
-
-  // 개발 환경에서는 인증 우회 가능
   const isDev = process.env.NODE_ENV === 'development';
 
   if (!isDev && !isInternalCall) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 }
-    );
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { jobId, assignmentId, isPremium = false } = body;
+    const { jobId, assignmentId } = body;
 
     if (!jobId && !assignmentId) {
       return NextResponse.json(
@@ -73,38 +36,22 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // ============================================================
     // 1. 동시 처리 제한 확인
-    // ============================================================
     const { count: processingCount } = await supabase
       .from('feedback_jobs')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'processing');
 
-    const currentProcessing = processingCount || 0;
-
-    if (currentProcessing >= MAX_CONCURRENT_JOBS) {
-      // 대기열에 추가하고 순서 대기
-      console.log(`[Processor] Queue full (${currentProcessing}/${MAX_CONCURRENT_JOBS}), job will be processed soon`);
-
+    if ((processingCount || 0) >= MAX_CONCURRENT_JOBS) {
       return NextResponse.json({
         success: true,
-        data: {
-          status: 'queued',
-          queuePosition: currentProcessing - MAX_CONCURRENT_JOBS + 1,
-          message: '처리 대기열에 추가되었습니다. 곧 처리됩니다.',
-          estimatedWait: `약 ${Math.ceil((currentProcessing - MAX_CONCURRENT_JOBS + 1) * 30)}초`,
-        },
+        data: { status: 'queued', message: '처리 대기열에 추가되었습니다.' },
       });
     }
 
-    // ============================================================
-    // 2. Job 선택 및 상태 변경 (원자적 처리)
-    // ============================================================
+    // 2. Job 선택
     let targetJobId = jobId;
-
     if (!targetJobId && assignmentId) {
-      // assignmentId로 pending job 찾기
       const { data: pendingJob } = await supabase
         .from('feedback_jobs')
         .select('id')
@@ -115,292 +62,226 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (!pendingJob) {
-        return NextResponse.json(
-          { success: false, error: '처리할 작업이 없습니다' },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: false, error: '처리할 작업이 없습니다' }, { status: 404 });
       }
-
       targetJobId = pendingJob.id;
     }
 
-    // Job 상태를 processing으로 변경 (원자적)
+    // 3. Job 상태를 processing으로 변경
     const { data: job, error: pickError } = await supabase
       .from('feedback_jobs')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
+        attempts: 1,
       })
       .eq('id', targetJobId)
-      .eq('status', 'pending') // 낙관적 락
-      .select()
+      .eq('status', 'pending')
+      .select('*, assignments(id, user_id, course_id, week_id, content, version)')
       .single();
 
     if (pickError || !job) {
-      // 이미 다른 워커가 처리 중
-      console.log(`[Processor] Job ${targetJobId} already picked by another worker`);
       return NextResponse.json({
         success: true,
-        data: {
-          status: 'already_processing',
-          message: '이미 처리 중입니다',
-        },
+        data: { status: 'already_processing', message: '이미 처리 중입니다' },
       });
     }
 
-    // attempts 증가 (별도 쿼리로 원자적 증가)
-    const currentAttempts = (job.attempts as number) || 0;
-    await supabase
-      .from('feedback_jobs')
-      .update({ attempts: currentAttempts + 1 })
-      .eq('id', targetJobId);
+    // 4. 과제 정보 가져오기
+    const assignment = (job as Record<string, unknown>).assignments as {
+      id: string;
+      user_id: string;
+      course_id: string;
+      week_id: string;
+      content: Record<string, string>;
+      version: number;
+    };
 
-    // ============================================================
-    // 3. Edge Function 호출 (AI 피드백 생성)
-    // ============================================================
-    const result = await callEdgeFunctionWithRetry(
-      targetJobId,
-      isPremium,
-      job.attempts || 0
-    );
+    if (!assignment) {
+      await supabase.from('feedback_jobs').update({
+        status: 'failed',
+        error_message: 'Assignment not found',
+        completed_at: new Date().toISOString(),
+      }).eq('id', targetJobId);
 
-    // ============================================================
-    // 4. 결과에 따른 상태 업데이트
-    // ============================================================
-    if (result.success) {
-      // 성공: 상태는 Edge Function에서 이미 completed로 변경됨
-      console.log(`[Processor] Job ${targetJobId} completed successfully`);
-    } else {
-      // 실패: 재시도 가능 여부 확인
-      const currentAttempts = (job.attempts || 0) + 1;
+      return NextResponse.json({ success: false, error: 'Assignment not found' }, { status: 404 });
+    }
 
-      if (currentAttempts >= MAX_RETRIES) {
-        // 최대 재시도 초과: failed 상태로 변경
-        await supabase
-          .from('feedback_jobs')
-          .update({
-            status: 'failed',
-            error_message: result.error || 'Max retries exceeded',
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', targetJobId);
+    // 5. RAG 데이터 로딩
+    const { data: ragMappings } = await supabase
+      .from('rag_week_mappings')
+      .select('rag_dataset_id')
+      .eq('week_id', assignment.week_id);
 
-        console.error(`[Processor] Job ${targetJobId} failed after ${currentAttempts} attempts`);
-      } else {
-        // 재시도 가능: pending으로 되돌리고 지연 후 재처리
-        await supabase
-          .from('feedback_jobs')
-          .update({
-            status: 'pending',
-            started_at: null,
-            error_message: result.error,
-            metadata: {
-              ...((job.metadata as Record<string, unknown>) || {}),
-              lastError: result.error,
-              lastAttemptAt: new Date().toISOString(),
-            },
-          })
-          .eq('id', targetJobId);
+    let ragContext = '';
+    if (ragMappings && ragMappings.length > 0) {
+      const datasetIds = ragMappings.map(m => m.rag_dataset_id);
+      const { data: chunks } = await supabase
+        .from('rag_chunks')
+        .select('content, category')
+        .in('dataset_id', datasetIds)
+        .order('chunk_index', { ascending: true });
 
-        // 지연 후 재처리 트리거 (Exponential Backoff)
-        const delay = BASE_DELAY_MS * Math.pow(2, currentAttempts - 1);
-        setTimeout(() => {
-          triggerNextJob(supabase);
-        }, delay);
-
-        console.log(`[Processor] Job ${targetJobId} will retry in ${delay}ms (attempt ${currentAttempts}/${MAX_RETRIES})`);
+      if (chunks) {
+        ragContext = chunks.map(c => `[${c.category}]\n${c.content}`).join('\n\n---\n\n');
       }
     }
 
-    // ============================================================
-    // 5. 대기 중인 다음 작업 처리 트리거
-    // ============================================================
-    // 비동기로 다음 작업 처리 시작 (fire-and-forget)
-    triggerNextJob(supabase);
+    // 6. 마스터 프롬프트 로딩
+    const { data: promptSetting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'feedback_master_prompt')
+      .single();
 
-    const elapsedMs = Date.now() - startTime;
+    const masterPrompt = promptSetting?.value
+      ? (typeof promptSetting.value === 'string' ? promptSetting.value : JSON.stringify(promptSetting.value))
+      : '비즈니스 아이템 기획서를 분석하여 상세한 피드백을 제공하세요.';
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        jobId: targetJobId,
-        status: result.success ? 'completed' : 'retrying',
-        feedbackId: result.feedbackId,
-        elapsedMs,
-        ...(result.error && { error: result.error }),
-      },
-    });
+    // 7. 학생 제출물 포맷팅
+    const content = assignment.content;
+    const fieldLabels: Record<string, string> = {
+      business_item_name: '비즈니스 아이템명',
+      target_customer: '타겟 고객',
+      core_problem: '핵심 문제/니즈 (Before)',
+      solution: '솔루션 (After)',
+      product_pricing: '상품 구성 및 가격',
+      sales_channel: '판매 채널',
+      funnel_roadmap: '퍼널 로드맵',
+      execution_plan: '실행 계획',
+    };
+
+    const studentSubmission = Object.entries(content)
+      .map(([key, value]) => `### ${fieldLabels[key] || key}\n${value}`)
+      .join('\n\n');
+
+    // 8. Claude API 호출
+    const systemPrompt = `${masterPrompt}
+
+---
+## 참고 자료 (RAG Context)
+${ragContext ? ragContext.substring(0, 80000) : '(참고 자료 없음)'}
+---
+
+위 참고 자료를 바탕으로 아래 학생의 과제를 분석하고 상세한 피드백을 제공하세요.
+
+## 피드백 형식
+피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 포함하세요:
+
+1. **Executive Summary** (전체 평가 요약, 3-5문장)
+2. **총점** (100점 만점, 형식: "총점: XX/100")
+3. **항목별 상세 분석** (8개 항목 각각에 대해)
+   - 현재 상태 진단
+   - 문제점 지적
+   - 구체적 개선안
+   - 참고 예시
+4. **퍼널 일관성 분석** (아이템-타겟-솔루션-가격-채널-퍼널 전체 흐름 검증)
+5. **실행 로드맵** (우선순위별 4주 실행 계획)
+6. **최종 한마디** (동기부여 + 핵심 메시지)`;
+
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+      const feedbackStartTime = Date.now();
+
+      const response = await anthropic.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 16000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: `## 수강생 과제 제출물\n\n${studentSubmission}`,
+          },
+        ],
+      });
+
+      const feedbackText = response.content
+        .filter(block => block.type === 'text')
+        .map(block => (block as { type: 'text'; text: string }).text)
+        .join('');
+
+      const generationTimeMs = Date.now() - feedbackStartTime;
+
+      // 9. 점수 추출
+      const scoreMatch = feedbackText.match(/총점[:\s]*(\d+)\s*[/\/]\s*100/);
+      const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+
+      // 10. 피드백 저장
+      const { data: feedback, error: feedbackError } = await supabase
+        .from('feedbacks')
+        .insert({
+          assignment_id: assignment.id,
+          user_id: assignment.user_id,
+          course_id: assignment.course_id,
+          week_id: assignment.week_id,
+          content: feedbackText,
+          summary: feedbackText.substring(0, 500),
+          scores: score ? { total: score } : null,
+          version: 1,
+          assignment_version: assignment.version,
+          status: 'generated',
+          tokens_input: response.usage?.input_tokens || 0,
+          tokens_output: response.usage?.output_tokens || 0,
+          generation_time_ms: generationTimeMs,
+        })
+        .select('id')
+        .single();
+
+      if (feedbackError) {
+        throw new Error(`Feedback save error: ${feedbackError.message}`);
+      }
+
+      // 11. Job 완료, Assignment 상태 업데이트
+      await Promise.all([
+        supabase.from('feedback_jobs').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        }).eq('id', targetJobId),
+
+        supabase.from('assignments').update({
+          status: 'feedback_ready',
+        }).eq('id', assignment.id),
+      ]);
+
+      const elapsedMs = Date.now() - startTime;
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          jobId: targetJobId,
+          status: 'completed',
+          feedbackId: feedback?.id,
+          score,
+          elapsedMs,
+          tokensUsed: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
+        },
+      });
+    } catch (aiError) {
+      console.error('[Processor] Claude API error:', aiError);
+
+      // Job 실패 처리
+      await supabase.from('feedback_jobs').update({
+        status: 'failed',
+        error_message: aiError instanceof Error ? aiError.message : 'AI processing failed',
+        completed_at: new Date().toISOString(),
+      }).eq('id', targetJobId);
+
+      return NextResponse.json({
+        success: false,
+        error: 'AI 피드백 생성 실패',
+        details: aiError instanceof Error ? aiError.message : 'Unknown error',
+      }, { status: 500 });
+    }
   } catch (error) {
     console.error('[Processor] Unexpected error:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-// ============================================================
-// Edge Function 호출 (재시도 로직 포함)
-// ============================================================
-async function callEdgeFunctionWithRetry(
-  jobId: string,
-  isPremium: boolean,
-  currentAttempts: number
-): Promise<ProcessResult> {
-  const edgeUrl = `${EDGE_FUNCTION_URL}/generate-feedback`;
-  const startTime = Date.now();
-
-  try {
-    const response = await fetch(edgeUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-cron-secret': CRON_SECRET,
-      },
-      body: JSON.stringify({
-        jobId,
-        isPremium,
-        cronSecret: CRON_SECRET,
-      }),
-      signal: AbortSignal.timeout(55000), // 55초 타임아웃 (Vercel 60초 제한 고려)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Edge Function error: ${response.status} ${errorText}`);
-    }
-
-    const result = await response.json();
-
-    return {
-      jobId,
-      success: true,
-      feedbackId: result.data?.feedbackId,
-      elapsedMs: Date.now() - startTime,
-    };
-  } catch (error) {
-    console.error(`[Processor] Edge Function call failed for job ${jobId}:`, error);
-
-    return {
-      jobId,
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      elapsedMs: Date.now() - startTime,
-    };
-  }
-}
-
-// ============================================================
-// 다음 대기 작업 처리 트리거
-// ============================================================
-async function triggerNextJob(supabase: ReturnType<typeof createAdminClient>) {
-  try {
-    // 현재 처리 중인 작업 수 확인
-    const { count: processingCount } = await supabase
-      .from('feedback_jobs')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'processing');
-
-    if ((processingCount || 0) >= MAX_CONCURRENT_JOBS) {
-      return; // 동시 처리 한도 도달
-    }
-
-    // 다음 pending 작업 확인
-    const { data: nextJob } = await supabase
-      .from('feedback_jobs')
-      .select('id, assignment_id')
-      .eq('status', 'pending')
-      .order('priority', { ascending: false }) // 높은 우선순위 먼저
-      .order('created_at', { ascending: true }) // FIFO
-      .limit(1)
-      .single();
-
-    if (!nextJob) {
-      return; // 대기 작업 없음
-    }
-
-    // 프리미엄 여부 확인
-    const isPremium = await checkPremiumStatus(supabase, nextJob.assignment_id);
-
-    // 자체 API 호출로 다음 작업 처리 (fire-and-forget)
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
-    fetch(`${baseUrl}/api/lms/feedback-processor`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-secret': INTERNAL_API_SECRET,
-      },
-      body: JSON.stringify({
-        jobId: nextJob.id,
-        isPremium,
-      }),
-    }).catch((err) => {
-      console.error('[Processor] Failed to trigger next job:', err);
-    });
-  } catch (error) {
-    console.error('[Processor] Error in triggerNextJob:', error);
-  }
-}
-
-// ============================================================
-// 프리미엄 사용자 확인
-// ============================================================
-async function checkPremiumStatus(
-  supabase: ReturnType<typeof createAdminClient>,
-  assignmentId: string
-): Promise<boolean> {
-  try {
-    const { data: assignment } = await supabase
-      .from('assignments')
-      .select('user_id')
-      .eq('id', assignmentId)
-      .single();
-
-    if (!assignment?.user_id) return false;
-
-    // 시스템 설정에서 프리미엄 사용자 확인
-    const { data: premiumSetting } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'premium_user_ids')
-      .single();
-
-    if (premiumSetting?.value) {
-      const premiumUserIds = Array.isArray(premiumSetting.value)
-        ? premiumSetting.value
-        : [];
-      if (premiumUserIds.includes(assignment.user_id)) {
-        return true;
-      }
-    }
-
-    // 프로필 role 확인
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', assignment.user_id)
-      .single();
-
-    if (profile?.role && ['premium', 'enterprise'].includes(profile.role.toLowerCase())) {
-      return true;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-// ============================================================
-// GET: 대기열 상태 조회 (디버깅/모니터링용)
-// ============================================================
+// GET: 대기열 상태 조회
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('x-internal-secret');
   const isInternalCall = authHeader === INTERNAL_API_SECRET;
@@ -413,19 +294,12 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
 
-    // 상태별 작업 수 조회
     const [pending, processing, completed, failed] = await Promise.all([
       supabase.from('feedback_jobs').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('feedback_jobs').select('*', { count: 'exact', head: true }).eq('status', 'processing'),
-      supabase
-        .from('feedback_jobs')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'completed')
+      supabase.from('feedback_jobs').select('*', { count: 'exact', head: true }).eq('status', 'completed')
         .gte('completed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
-      supabase
-        .from('feedback_jobs')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'failed')
+      supabase.from('feedback_jobs').select('*', { count: 'exact', head: true }).eq('status', 'failed')
         .gte('completed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
     ]);
 
@@ -436,7 +310,6 @@ export async function GET(request: NextRequest) {
           pending: pending.count || 0,
           processing: processing.count || 0,
           maxConcurrent: MAX_CONCURRENT_JOBS,
-          available: MAX_CONCURRENT_JOBS - (processing.count || 0),
         },
         last24h: {
           completed: completed.count || 0,

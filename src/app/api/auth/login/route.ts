@@ -139,6 +139,7 @@ export async function POST(request: NextRequest) {
                     fullName: profile.full_name,
                     tier: profile.tier,
                     role: profile.role,
+                    courseType: profile.course_type || 'SALES_FUNNEL',
                     isApproved: profile.is_approved,
                     createdAt: profile.created_at
                 }

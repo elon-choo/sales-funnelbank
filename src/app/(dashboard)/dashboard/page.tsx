@@ -116,6 +116,48 @@ export default function DashboardPage() {
                 )}
             </div>
 
+            {/* 세퍼마 과제/피드백 섹션 */}
+            {(user.courseType === 'SALES_FUNNEL' || !user.courseType) && (
+                <div className="space-y-4">
+                    <h2 className="text-xl font-semibold text-white">세일즈 퍼널 과제</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <Link href="/lms/assignments/new" className="glass-card p-6 rounded-xl border border-white/10 hover:border-orange-500/50 transition-colors group cursor-pointer bg-gradient-to-br from-orange-900/10 to-red-900/10">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-orange-500/10 rounded-lg group-hover:bg-orange-500/20 transition-colors">
+                                    <Icons.edit className="w-6 h-6 text-orange-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">과제 제출</h3>
+                                    <p className="text-sm text-gray-400">비즈니스 기획서 작성 & AI 피드백</p>
+                                </div>
+                            </div>
+                        </Link>
+                        <Link href="/lms/assignments" className="glass-card p-6 rounded-xl border border-white/10 hover:border-amber-500/50 transition-colors group cursor-pointer">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-amber-500/10 rounded-lg group-hover:bg-amber-500/20 transition-colors">
+                                    <Icons.list className="w-6 h-6 text-amber-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">내 과제</h3>
+                                    <p className="text-sm text-gray-400">제출한 과제 확인</p>
+                                </div>
+                            </div>
+                        </Link>
+                        <Link href="/lms/feedbacks" className="glass-card p-6 rounded-xl border border-white/10 hover:border-emerald-500/50 transition-colors group cursor-pointer">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-emerald-500/10 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
+                                    <Icons.check className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">AI 피드백</h3>
+                                    <p className="text-sm text-gray-400">AI 분석 리포트 확인</p>
+                                </div>
+                            </div>
+                        </Link>
+                    </div>
+                </div>
+            )}
+
             {/* User Info */}
             <div className="glass-card p-6 rounded-xl border border-white/10">
                 <h2 className="text-xl font-semibold text-white mb-4">내 정보</h2>

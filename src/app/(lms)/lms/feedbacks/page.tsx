@@ -10,10 +10,10 @@ interface Feedback {
   id: string;
   assignment_id: string;
   version: number;
-  ai_model: string;
-  raw_feedback: string;
-  parsed_feedback: Record<string, unknown> | null;
-  score: number | null;
+  content: string;
+  summary: string;
+  scores: { total: number } | null;
+  status: string;
   created_at: string;
   assignments: {
     id: string;
@@ -79,7 +79,7 @@ export default function FeedbacksPage() {
   }, [accessToken]);
 
   // Calculate average score
-  const scores = feedbacks.map((f) => f.score).filter((s): s is number => s !== null);
+  const scores = feedbacks.map((f) => f.scores?.total ?? null).filter((s): s is number => s !== null);
   const averageScore = scores.length > 0
     ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10
     : null;
@@ -209,18 +209,18 @@ export default function FeedbacksPage() {
                       {feedback.assignments?.courses?.title}
                     </p>
                     <p className="text-sm text-slate-500 mt-2">
-                      {new Date(feedback.created_at).toLocaleDateString('ko-KR')} · {feedback.ai_model || 'AI'}
+                      {new Date(feedback.created_at).toLocaleDateString('ko-KR')}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {feedback.score !== null && (
+                  {feedback.scores?.total != null && (
                     <span className={`px-4 py-2 rounded-xl text-lg font-bold ${
-                      feedback.score >= 80 ? 'bg-green-600/20 text-green-400' :
-                      feedback.score >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
+                      feedback.scores.total >= 80 ? 'bg-green-600/20 text-green-400' :
+                      feedback.scores.total >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
                       'bg-red-600/20 text-red-400'
                     }`}>
-                      {feedback.score}점
+                      {feedback.scores.total}점
                     </span>
                   )}
                   <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,7 +232,7 @@ export default function FeedbacksPage() {
               {/* Feedback Preview */}
               <div className="mt-4 p-4 bg-slate-900/50 rounded-lg">
                 <p className="text-sm text-slate-300 line-clamp-3">
-                  {feedback.raw_feedback?.substring(0, 300)}...
+                  {feedback.summary || feedback.content?.substring(0, 300)}...
                 </p>
               </div>
             </Link>

@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
                     fullName: profile.full_name,
                     tier: profile.tier,
                     role: profile.role || 'user',
+                    courseType: profile.course_type || 'SALES_FUNNEL',
                     isApproved: profile.is_approved,
                     createdAt: profile.created_at
                 }

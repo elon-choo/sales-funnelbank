@@ -5,16 +5,11 @@ import { reserveTokens, confirmTokenUsage } from '@/lib/ai/tokenManager';
 import { estimateTokens } from '@/lib/ai/tokenEstimator';
 import { callClaudeAPI } from '@/lib/ai/claude';
 import { authenticateRequest } from '@/lib/auth/guards';
-import { createClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/admin';
 import Anthropic from '@anthropic-ai/sdk';
 
-export const runtime = 'edge';
-export const maxDuration = 90;
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 // 하드코딩된 어드민 ID (guards.ts와 동일)
 const HARDCODED_ADMIN_ID = '00000000-0000-0000-0000-000000000001';
@@ -96,6 +91,8 @@ export async function POST(request: NextRequest) {
         }
 
         // 일반 사용자 플로우
+        const supabase = createAdminClient();
+
         // 3. 세션 처리 (새로 생성 또는 기존 사용)
         let currentSessionId = sessionId;
         let conversationHistory: Anthropic.MessageParam[] = [];
