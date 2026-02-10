@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       user_id: string;
       course_id: string;
       week_id: string;
-      content: Record<string, string>;
+      content: Record<string, unknown>;
       version: number;
     };
 
@@ -109,16 +109,39 @@ export async function POST(request: NextRequest) {
     }
 
     // 4-1. 파일 첨부 과제인 경우 파일 내용 추출
-    const content = assignment.content;
-    const isFileUpload = content._submitMode === 'file' || content._placeholder;
+    const content = assignment.content as Record<string, unknown>;
+    const isFileUpload = content.submitMode === 'file' || content._submitMode === 'file' || content._placeholder;
     let fileContents = '';
 
     if (isFileUpload) {
-      const { data: files } = await supabase
-        .from('assignment_files')
-        .select('id, file_name, file_path, mime_type, file_size, extracted_text')
-        .eq('assignment_id', assignment.id)
-        .order('created_at', { ascending: true });
+      // content.attachedFiles에 파일 ID 목록이 있으면 해당 ID로 조회
+      const attachedFiles = content.attachedFiles as Array<{ id: string }> | undefined;
+      const fileIds = attachedFiles?.map(f => f.id).filter(Boolean);
+
+      let files: Array<{
+        id: string; file_name: string; file_path: string;
+        mime_type: string | null; file_size: number | null; extracted_text: string | null;
+      }> | null = null;
+
+      if (fileIds && fileIds.length > 0) {
+        // 파일 ID 기반 조회 (다른 assignment 버전에 첨부된 파일도 찾음)
+        const { data } = await supabase
+          .from('assignment_files')
+          .select('id, file_name, file_path, mime_type, file_size, extracted_text')
+          .in('id', fileIds)
+          .order('created_at', { ascending: true });
+        files = data;
+      }
+
+      // fallback: assignment_id 기반 조회
+      if (!files || files.length === 0) {
+        const { data } = await supabase
+          .from('assignment_files')
+          .select('id, file_name, file_path, mime_type, file_size, extracted_text')
+          .eq('assignment_id', assignment.id)
+          .order('created_at', { ascending: true });
+        files = data;
+      }
 
       if (files && files.length > 0) {
         const textParts: string[] = [];
@@ -220,9 +243,10 @@ export async function POST(request: NextRequest) {
         execution_plan: '실행 계획',
       };
 
+      const excludeKeys = ['_submitMode', '_placeholder', 'submitMode', 'attachedFiles'];
       studentSubmission = Object.entries(content)
-        .filter(([key]) => !key.startsWith('_')) // _submitMode 등 내부 필드 제외
-        .map(([key, value]) => `### ${fieldLabels[key] || key}\n${value}`)
+        .filter(([key]) => !excludeKeys.includes(key) && !key.startsWith('_'))
+        .map(([key, value]) => `### ${fieldLabels[key] || key}\n${typeof value === 'string' ? value : JSON.stringify(value)}`)
         .join('\n\n');
     }
 
