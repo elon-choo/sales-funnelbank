@@ -134,8 +134,9 @@ export default function NewAssignmentPage() {
         const assignData = await assignRes.json();
 
         // 필드 설정
-        if (configData.success && configData.data?.configs) {
-          const sorted = configData.data.configs.sort(
+        const rawConfigs = configData.data?.configs || configData.data?.fieldConfigs;
+        if (configData.success && rawConfigs) {
+          const sorted = rawConfigs.sort(
             (a: FieldConfig, b: FieldConfig) => a.sort_order - b.sort_order
           );
           setFields(sorted);
