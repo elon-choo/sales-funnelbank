@@ -2,7 +2,7 @@
 // 과제 제출 폼 페이지
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -24,6 +24,7 @@ interface WeekInfo {
   course_id: string;
   is_active: boolean;
   deadline: string | null;
+  assignment_type: string;
 }
 
 interface SubmissionInfo {
@@ -33,10 +34,19 @@ interface SubmissionInfo {
   canSubmit: boolean;
 }
 
+interface UploadedFile {
+  id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  url?: string;
+}
+
 export default function NewAssignmentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { accessToken } = useAuthStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [weeks, setWeeks] = useState<WeekInfo[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<WeekInfo | null>(null);
@@ -50,6 +60,9 @@ export default function NewAssignmentPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedDraft, setSavedDraft] = useState(false);
   const [submissionInfo, setSubmissionInfo] = useState<SubmissionInfo | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [lastAssignmentId, setLastAssignmentId] = useState<string | null>(null);
 
   // 주차 목록 로딩
   useEffect(() => {
@@ -118,6 +131,8 @@ export default function NewAssignmentPage() {
       setError(null);
       setFields([]);
       setSavedDraft(false);
+      setUploadedFiles([]);
+      setLastAssignmentId(null);
 
       try {
         // 필드 설정 + 제출 현황 병렬 조회
@@ -169,6 +184,11 @@ export default function NewAssignmentPage() {
           remaining: Math.max(0, maxAllowed - submittedCount),
           canSubmit: submittedCount < maxAllowed,
         });
+
+        // 가장 최근 과제 ID (파일 업로드용)
+        if (assignments.length > 0) {
+          setLastAssignmentId(assignments[0].id);
+        }
       } catch (err) {
         setError('필드 설정을 불러오는데 실패했습니다.');
         console.error(err);
@@ -197,6 +217,108 @@ export default function NewAssignmentPage() {
 
   const handleFieldChange = (key: string, value: string) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !accessToken) return;
+
+    // 파일 크기 체크 (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('파일 크기는 10MB를 초과할 수 없습니다.');
+      return;
+    }
+
+    // 먼저 과제를 draft로 저장 (파일 업로드에는 assignment_id가 필요)
+    let assignmentId = lastAssignmentId;
+
+    if (!assignmentId && selectedWeek && courseId) {
+      setUploading(true);
+      try {
+        const draftRes = await fetch(
+          `/api/lms/assignments?courseId=${courseId}&weekId=${selectedWeek.id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              content: formData,
+              isDraft: true,
+            }),
+          }
+        );
+        const draftData = await draftRes.json();
+        if (draftData.success) {
+          assignmentId = draftData.data.assignment.id;
+          setLastAssignmentId(assignmentId);
+        } else {
+          setError('파일 업로드를 위한 과제 초안 생성에 실패했습니다.');
+          setUploading(false);
+          return;
+        }
+      } catch {
+        setError('과제 초안 생성 중 오류가 발생했습니다.');
+        setUploading(false);
+        return;
+      }
+    }
+
+    if (!assignmentId) {
+      setError('파일 업로드를 위한 과제 ID가 없습니다.');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const formDataObj = new FormData();
+      formDataObj.append('file', file);
+
+      const res = await fetch(`/api/lms/assignments/${assignmentId}/files`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: formDataObj,
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        throw new Error(result.error?.message || '파일 업로드 실패');
+      }
+
+      setUploadedFiles(prev => [...prev, result.data.file]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '파일 업로드 중 오류가 발생했습니다.');
+    } finally {
+      setUploading(false);
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileDelete = async (fileId: string) => {
+    if (!lastAssignmentId || !accessToken) return;
+
+    try {
+      const res = await fetch(`/api/lms/assignments/${lastAssignmentId}/files`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ fileId }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
+      }
+    } catch {
+      setError('파일 삭제 중 오류가 발생했습니다.');
+    }
   };
 
   const handleSubmit = async (isDraft: boolean) => {
@@ -233,7 +355,15 @@ export default function NewAssignmentPage() {
             Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
-            content: formData,
+            content: {
+              ...formData,
+              attachedFiles: uploadedFiles.map(f => ({
+                id: f.id,
+                name: f.file_name,
+                type: f.file_type,
+                size: f.file_size,
+              })),
+            },
             isDraft,
           }),
         }
@@ -257,6 +387,12 @@ export default function NewAssignmentPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   };
 
   if (loading) {
@@ -309,15 +445,16 @@ export default function NewAssignmentPage() {
 
         {/* Week selector */}
         <div className="flex items-center gap-3">
-          <label className="text-sm text-slate-300">주차 선택:</label>
+          <label className="text-sm text-slate-300">과제 선택:</label>
           <select
             value={selectedWeek?.id || ''}
             onChange={e => handleWeekChange(e.target.value)}
-            className="bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 flex-1"
           >
             {weeks.map(w => (
               <option key={w.id} value={w.id}>
                 {w.week_number}주차 - {w.title}
+                {w.assignment_type === 'funnel' ? ' (퍼널)' : w.assignment_type === 'plan' ? ' (기획서)' : ''}
               </option>
             ))}
           </select>
@@ -423,6 +560,75 @@ export default function NewAssignmentPage() {
             ))}
           </div>
 
+          {/* File Upload Section */}
+          <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+            <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+              <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              파일 첨부 (선택사항)
+            </h3>
+            <p className="text-slate-400 text-sm mb-4">
+              PDF, 이미지, Word 파일을 첨부할 수 있습니다. (최대 10MB, 5개까지)
+            </p>
+
+            {/* Uploaded files list */}
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {uploadedFiles.map(file => (
+                  <div key={file.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-4 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-white text-sm truncate">{file.file_name}</span>
+                      <span className="text-slate-500 text-xs flex-shrink-0">({formatFileSize(file.file_size)})</span>
+                    </div>
+                    <button
+                      onClick={() => handleFileDelete(file.id)}
+                      className="text-red-400 hover:text-red-300 text-xs ml-2 flex-shrink-0"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload button */}
+            {uploadedFiles.length < 5 && (
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.doc,.docx"
+                  className="hidden"
+                  disabled={uploading || submitting}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading || submitting || (submissionInfo ? !submissionInfo.canSubmit : false)}
+                  className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-slate-600 hover:border-purple-500/50 rounded-lg text-slate-400 hover:text-purple-400 transition-colors disabled:opacity-50 w-full justify-center"
+                >
+                  {uploading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-purple-500" />
+                      업로드 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      파일 선택
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Submit Buttons */}
           <div className="flex items-center justify-between pt-4 pb-8">
             <button
@@ -430,7 +636,7 @@ export default function NewAssignmentPage() {
               className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
               disabled={submitting}
             >
-              ← 돌아가기
+              &larr; 돌아가기
             </button>
 
             <div className="flex items-center gap-3">

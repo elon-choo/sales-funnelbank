@@ -32,9 +32,9 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
     const isAdmin = user.role === 'admin';
 
     const navItems = [
-        { href: '/dashboard', label: '대시보드', icon: Icons.home },
-        { href: '/chat', label: 'AI 채팅', icon: Icons.message },
-        { href: '/lms/dashboard', label: 'LMS', icon: Icons.bookOpen },
+        { href: '/lms/dashboard', label: '대시보드', icon: Icons.home },
+        { href: '/lms/assignments', label: '과제', icon: Icons.edit },
+        { href: '/lms/feedbacks', label: '피드백', icon: Icons.sparkles },
     ];
 
     if (isAdmin) {
@@ -46,7 +46,7 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
                     {/* Logo */}
-                    <Link href="/dashboard" className="flex items-center gap-2">
+                    <Link href="/lms/dashboard" className="flex items-center gap-2">
                         <Icons.zap className="w-6 h-6 text-purple-400" />
                         <span className="font-bold text-white">Magnetic Sales</span>
                     </Link>

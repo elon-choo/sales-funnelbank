@@ -42,7 +42,7 @@ export default function LoginPage() {
 
             if (result.data) {
                 loginStore(result.data.user, result.data.accessToken);
-                router.push('/dashboard');
+                router.push('/lms/dashboard');
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
