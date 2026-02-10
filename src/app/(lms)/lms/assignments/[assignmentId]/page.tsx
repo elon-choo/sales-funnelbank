@@ -50,7 +50,19 @@ interface AttachedFile {
 const statusLabels: Record<string, { text: string; color: string }> = {
   draft: { text: '초안', color: 'bg-slate-600/20 text-slate-400 border-slate-500/30' },
   submitted: { text: '제출됨', color: 'bg-blue-600/20 text-blue-400 border-blue-500/30' },
-  reviewed: { text: '피드백 완료', color: 'bg-green-600/20 text-green-400 border-green-500/30' },
+  feedback_ready: { text: '피드백 완료', color: 'bg-green-600/20 text-green-400 border-green-500/30' },
+  reviewed: { text: '리뷰 완료', color: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30' },
+};
+
+const fieldLabels: Record<string, string> = {
+  business_item_name: '비즈니스 아이템명',
+  target_customer: '타겟 고객',
+  core_problem: '핵심 문제/니즈 (Before)',
+  solution: '솔루션 (After)',
+  product_pricing: '상품 구성 및 가격',
+  sales_channel: '판매 채널',
+  funnel_roadmap: '퍼널 로드맵',
+  execution_plan: '실행 계획',
 };
 
 export default function AssignmentDetailPage() {
@@ -302,13 +314,65 @@ export default function AssignmentDetailPage() {
       {/* Content Preview */}
       <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
         <h2 className="text-lg font-semibold text-white mb-4">제출 내용</h2>
-        <div className="bg-slate-900/50 rounded-xl p-4 max-h-96 overflow-y-auto">
-          <pre className="text-sm text-slate-300 whitespace-pre-wrap">
-            {typeof assignment.content === 'object'
-              ? JSON.stringify(assignment.content, null, 2)
-              : String(assignment.content)}
-          </pre>
-        </div>
+
+        {assignment.content?.submitMode === 'file' || assignment.content?._submitMode === 'file' ? (
+          // 파일 첨부 모드: 첨부 파일 목록 표시
+          <div className="space-y-3">
+            {files.length > 0 ? (
+              files.map((file) => (
+                <div key={file.id} className="flex items-center gap-3 p-4 bg-slate-900/50 rounded-xl">
+                  {getFileIcon(file.file_type)}
+                  <div className="flex-1 min-w-0">
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-white hover:text-purple-400 transition-colors font-medium truncate block"
+                    >
+                      {file.file_name}
+                    </a>
+                    <p className="text-xs text-slate-500 mt-0.5">{formatFileSize(file.file_size)}</p>
+                  </div>
+                  <a
+                    href={file.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-purple-600/20 text-purple-400 text-sm rounded-lg hover:bg-purple-600/30 transition-colors flex-shrink-0"
+                  >
+                    다운로드
+                  </a>
+                </div>
+              ))
+            ) : (
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <p className="text-slate-400 text-sm">파일 첨부 모드로 제출되었습니다</p>
+                <p className="text-slate-500 text-xs mt-1">아래 첨부파일 섹션을 확인해주세요</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          // 텍스트 입력 모드: 필드별 렌더링
+          <div className="space-y-4">
+            {Object.entries(assignment.content || {})
+              .filter(([key]) => !['_submitMode', '_placeholder', 'submitMode', 'attachedFiles'].includes(key) && !key.startsWith('_'))
+              .map(([key, value]) => (
+                <div key={key} className="bg-slate-900/50 rounded-xl p-4">
+                  <h3 className="text-sm font-medium text-purple-400 mb-2">
+                    {fieldLabels[key] || key}
+                  </h3>
+                  <p className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
+                    {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+                  </p>
+                </div>
+              ))
+            }
+            {Object.keys(assignment.content || {}).filter(k => !['_submitMode', '_placeholder', 'submitMode', 'attachedFiles'].includes(k) && !k.startsWith('_')).length === 0 && (
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <p className="text-slate-400 text-sm">제출된 내용이 없습니다</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Attached Files */}
