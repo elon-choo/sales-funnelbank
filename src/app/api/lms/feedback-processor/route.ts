@@ -108,6 +108,68 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Assignment not found' }, { status: 404 });
     }
 
+    // 4-1. 파일 첨부 과제인 경우 파일 내용 추출
+    const content = assignment.content;
+    const isFileUpload = content._submitMode === 'file' || content._placeholder;
+    let fileContents = '';
+
+    if (isFileUpload) {
+      const { data: files } = await supabase
+        .from('assignment_files')
+        .select('id, file_name, file_path, mime_type, file_size, extracted_text')
+        .eq('assignment_id', assignment.id)
+        .order('created_at', { ascending: true });
+
+      if (files && files.length > 0) {
+        const textParts: string[] = [];
+
+        for (const file of files) {
+          // 이미 추출된 텍스트가 있으면 사용
+          if (file.extracted_text) {
+            textParts.push(`--- 파일: ${file.file_name} ---\n${file.extracted_text}`);
+            continue;
+          }
+
+          // 텍스트 기반 파일은 직접 다운로드하여 읽기
+          const isTextFile = [
+            'text/plain', 'text/markdown', 'text/x-markdown',
+            'text/csv', 'text/html', 'application/json',
+          ].includes(file.mime_type || '');
+
+          const textExtensions = ['txt', 'md', 'csv', 'json', 'html', 'text'];
+          const ext = file.file_name?.split('.').pop()?.toLowerCase() || '';
+          const isTextExtension = textExtensions.includes(ext);
+
+          if (isTextFile || isTextExtension) {
+            try {
+              const { data: fileData, error: downloadError } = await supabase.storage
+                .from('assignment-files')
+                .download(file.file_path);
+
+              if (!downloadError && fileData) {
+                const text = await fileData.text();
+                textParts.push(`--- 파일: ${file.file_name} ---\n${text}`);
+
+                // extracted_text 컬럼에 저장 (캐싱)
+                await supabase
+                  .from('assignment_files')
+                  .update({ extracted_text: text.substring(0, 100000) })
+                  .eq('id', file.id);
+              }
+            } catch (dlError) {
+              console.error(`[Processor] File download error (${file.file_name}):`, dlError);
+              textParts.push(`--- 파일: ${file.file_name} (다운로드 실패) ---`);
+            }
+          } else {
+            // PDF, Word, 이미지 등 바이너리 파일
+            textParts.push(`--- 파일: ${file.file_name} (${file.mime_type}, ${Math.round((file.file_size || 0) / 1024)}KB) - 텍스트 추출 불가 ---`);
+          }
+        }
+
+        fileContents = textParts.join('\n\n');
+      }
+    }
+
     // 5. RAG 데이터 로딩
     const { data: ragMappings } = await supabase
       .from('rag_week_mappings')
@@ -140,21 +202,29 @@ export async function POST(request: NextRequest) {
       : '비즈니스 아이템 기획서를 분석하여 상세한 피드백을 제공하세요.';
 
     // 7. 학생 제출물 포맷팅
-    const content = assignment.content;
-    const fieldLabels: Record<string, string> = {
-      business_item_name: '비즈니스 아이템명',
-      target_customer: '타겟 고객',
-      core_problem: '핵심 문제/니즈 (Before)',
-      solution: '솔루션 (After)',
-      product_pricing: '상품 구성 및 가격',
-      sales_channel: '판매 채널',
-      funnel_roadmap: '퍼널 로드맵',
-      execution_plan: '실행 계획',
-    };
+    let studentSubmission: string;
 
-    const studentSubmission = Object.entries(content)
-      .map(([key, value]) => `### ${fieldLabels[key] || key}\n${value}`)
-      .join('\n\n');
+    if (isFileUpload && fileContents) {
+      // 파일 첨부 과제: 파일 내용 사용
+      studentSubmission = fileContents;
+    } else {
+      // 텍스트 입력 과제: 필드별 포맷팅
+      const fieldLabels: Record<string, string> = {
+        business_item_name: '비즈니스 아이템명',
+        target_customer: '타겟 고객',
+        core_problem: '핵심 문제/니즈 (Before)',
+        solution: '솔루션 (After)',
+        product_pricing: '상품 구성 및 가격',
+        sales_channel: '판매 채널',
+        funnel_roadmap: '퍼널 로드맵',
+        execution_plan: '실행 계획',
+      };
+
+      studentSubmission = Object.entries(content)
+        .filter(([key]) => !key.startsWith('_')) // _submitMode 등 내부 필드 제외
+        .map(([key, value]) => `### ${fieldLabels[key] || key}\n${value}`)
+        .join('\n\n');
+    }
 
     // 8. Claude API 호출
     const systemPrompt = `${masterPrompt}
