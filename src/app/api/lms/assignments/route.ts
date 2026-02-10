@@ -125,10 +125,16 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       const { content, isDraft = false } = body;
 
-      // content 유효성 검증
-      if (!content || typeof content !== 'object' || Object.keys(content).length === 0) {
+      // content 유효성 검증 (초안은 빈 내용 허용 - 파일 첨부용 draft)
+      if (!content || typeof content !== 'object') {
         return NextResponse.json(
           { success: false, error: { code: 'VALIDATION_ERROR', message: '과제 내용은 필수입니다' } },
+          { status: 400 }
+        );
+      }
+      if (!isDraft && Object.keys(content).length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: '과제 내용을 입력해주세요' } },
           { status: 400 }
         );
       }
