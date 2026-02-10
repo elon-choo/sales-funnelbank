@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   return withLmsAuth(request, async (auth, supabase) => {
     const { searchParams } = new URL(request.url);
     const assignmentId = searchParams.get('assignmentId');
+    const assignmentIds = searchParams.get('assignmentIds'); // 쉼표 구분 복수 ID
     const status = searchParams.get('status');
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
           .range(offset, offset + limit - 1);
 
         if (assignmentId) query = query.eq('assignment_id', assignmentId);
+        if (assignmentIds) query = query.in('assignment_id', assignmentIds.split(','));
         if (status) query = query.eq('status', status);
 
         const { data: jobs, error, count } = await query;
@@ -108,6 +110,7 @@ export async function GET(request: NextRequest) {
         .range(offset, offset + limit - 1);
 
       if (assignmentId) query = query.eq('assignment_id', assignmentId);
+      if (assignmentIds) query = query.in('assignment_id', assignmentIds.split(','));
       if (status) query = query.eq('status', status);
 
       const { data: jobs, error, count } = await query;

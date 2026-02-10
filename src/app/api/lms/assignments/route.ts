@@ -229,11 +229,6 @@ export async function POST(request: NextRequest) {
             assignment_id: assignment.id,
             status: 'pending',
             worker_type: 'edge',
-            priority: 5, // 기본 우선순위
-            metadata: {
-              submittedAt: new Date().toISOString(),
-              userId: auth.userId,
-            },
           })
           .select('id')
           .single();

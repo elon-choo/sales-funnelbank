@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import Anthropic from '@anthropic-ai/sdk';
+import nodemailer from 'nodemailer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // Vercel Pro: 최대 5분 (긴 피드백 생성용)
@@ -243,6 +244,86 @@ ${ragContext ? ragContext.substring(0, 80000) : '(참고 자료 없음)'}
         }).eq('id', assignment.id),
       ]);
 
+      // 12. SMTP 이메일 발송
+      let emailSent = false;
+      try {
+        const smtpHost = process.env.SMTP_HOST;
+        const smtpUser = process.env.SMTP_USER;
+        const smtpPass = process.env.SMTP_PASSWORD;
+        const smtpFrom = process.env.SMTP_FROM;
+
+        if (smtpHost && smtpUser && smtpPass) {
+          // 수신자: 과제 제출자 이메일 조회
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('email, full_name')
+            .eq('id', assignment.user_id)
+            .single();
+
+          const recipientEmail = profile?.email;
+          const recipientName = profile?.full_name || '수강생';
+
+          if (recipientEmail) {
+            const transporter = nodemailer.createTransport({
+              host: smtpHost,
+              port: parseInt(process.env.SMTP_PORT || '587'),
+              secure: false,
+              auth: { user: smtpUser, pass: smtpPass },
+            });
+
+            const baseUrl = process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+            const feedbackUrl = `${baseUrl}/lms/feedbacks/${feedback?.id}`;
+
+            const scoreText = score !== null ? `총점: ${score}/100` : '';
+            const summaryPreview = feedbackText.substring(0, 500).replace(/[#*_]/g, '');
+
+            await transporter.sendMail({
+              from: `"마그네틱 세일즈" <${smtpFrom || smtpUser}>`,
+              to: recipientEmail,
+              subject: `[피드백 완료] 과제 피드백이 생성되었습니다 ${scoreText}`,
+              html: `
+                <div style="font-family: 'Pretendard', -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a2e; color: #e0e0e0; padding: 32px; border-radius: 16px;">
+                  <div style="text-align: center; margin-bottom: 24px;">
+                    <h1 style="color: #a855f7; font-size: 24px; margin: 0;">AI 피드백 완료</h1>
+                  </div>
+                  <p style="color: #d0d0d0; font-size: 16px;">안녕하세요 ${recipientName}님,</p>
+                  <p style="color: #b0b0b0;">제출하신 과제에 대한 AI 피드백이 생성되었습니다.</p>
+                  ${score !== null ? `
+                  <div style="background: #2a2a4a; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
+                    <span style="font-size: 14px; color: #888;">총점</span>
+                    <p style="font-size: 48px; font-weight: bold; color: ${score >= 80 ? '#4ade80' : score >= 60 ? '#facc15' : '#f87171'}; margin: 8px 0;">${score}<span style="font-size: 20px; color: #888;">/100</span></p>
+                  </div>
+                  ` : ''}
+                  <div style="background: #2a2a4a; padding: 16px; border-radius: 12px; margin: 16px 0;">
+                    <p style="color: #b0b0b0; font-size: 14px; line-height: 1.6;">${summaryPreview}...</p>
+                  </div>
+                  <div style="text-align: center; margin-top: 24px;">
+                    <a href="${feedbackUrl}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #a855f7, #ec4899); color: white; text-decoration: none; border-radius: 12px; font-weight: bold; font-size: 16px;">
+                      피드백 전문 보기
+                    </a>
+                  </div>
+                  <p style="color: #666; font-size: 12px; margin-top: 24px; text-align: center;">
+                    마그네틱 세일즈 마스터클래스
+                  </p>
+                </div>
+              `,
+            });
+
+            emailSent = true;
+
+            // feedbacks 테이블에 sent_at 기록
+            await supabase.from('feedbacks').update({
+              sent_at: new Date().toISOString(),
+            }).eq('id', feedback?.id);
+          }
+        }
+      } catch (emailError) {
+        console.error('[Processor] Email send error:', emailError);
+        // 이메일 실패해도 피드백은 이미 저장됨
+      }
+
       const elapsedMs = Date.now() - startTime;
 
       return NextResponse.json({
@@ -253,6 +334,7 @@ ${ragContext ? ragContext.substring(0, 80000) : '(참고 자료 없음)'}
           feedbackId: feedback?.id,
           score,
           elapsedMs,
+          emailSent,
           tokensUsed: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
         },
       });
