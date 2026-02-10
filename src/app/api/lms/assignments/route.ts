@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
             ? `https://${process.env.VERCEL_URL}`
             : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-          const internalSecret = process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '';
+          const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
 
           // Fire-and-forget: 응답 대기 없이 피드백 처리 시작
           fetch(`${baseUrl}/api/lms/feedback-processor`, {

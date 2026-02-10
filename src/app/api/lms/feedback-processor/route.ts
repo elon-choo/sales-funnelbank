@@ -9,8 +9,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300; // Vercel Pro: 최대 5분 (긴 피드백 생성용)
 
 const MAX_CONCURRENT_JOBS = 5;
-const CRON_SECRET = process.env.CRON_SECRET_FEEDBACK || '';
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || CRON_SECRET;
+const CRON_SECRET = (process.env.CRON_SECRET_FEEDBACK || '').trim();
+const INTERNAL_API_SECRET = (process.env.INTERNAL_API_SECRET || CRON_SECRET).trim();
 
 // POST /api/lms/feedback-processor
 export async function POST(request: NextRequest) {
