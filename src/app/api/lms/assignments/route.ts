@@ -1,6 +1,7 @@
 // src/app/api/lms/assignments/route.ts
 // 과제 목록 조회 및 제출 API
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { withLmsAuth, withEnrollmentAuth } from '@/lib/lms/guards';
 
 // GET /api/lms/assignments - 내 과제 목록 조회
@@ -239,29 +240,32 @@ export async function POST(request: NextRequest) {
           // 과제는 저장되었으므로 경고만 로깅
         }
 
-        // 2. 즉시 피드백 처리 트리거 (프로덕션 아키텍처: 크론 의존 제거)
+        // 2. 즉시 피드백 처리 트리거 (after()로 응답 후 실행 보장)
         if (feedbackJob) {
-          const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          after(async () => {
+            try {
+              const baseUrl = process.env.VERCEL_URL
+                ? `https://${process.env.VERCEL_URL}`
+                : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-          const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
+              const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
 
-          // Fire-and-forget: 응답 대기 없이 피드백 처리 시작
-          fetch(`${baseUrl}/api/lms/feedback-processor`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-internal-secret': internalSecret,
-            },
-            body: JSON.stringify({
-              jobId: feedbackJob.id,
-              assignmentId: assignment.id,
-              isPremium: false, // 기본값, processor에서 다시 확인
-            }),
-          }).catch((err) => {
-            console.error('[Feedback Processor Trigger Error]', err);
-            // 실패해도 Cron이 fallback으로 처리함
+              const res = await fetch(`${baseUrl}/api/lms/feedback-processor`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-internal-secret': internalSecret,
+                },
+                body: JSON.stringify({
+                  jobId: feedbackJob.id,
+                  assignmentId: assignment.id,
+                }),
+              });
+              const result = await res.json();
+              console.log('[Feedback Trigger] Result:', result?.data?.status || result?.error);
+            } catch (err) {
+              console.error('[Feedback Processor Trigger Error]', err);
+            }
           });
         }
       }

@@ -80,6 +80,8 @@ export default function NewAssignmentPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [draftAssignmentId, setDraftAssignmentId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // 주차별로 그룹핑
   const weekGroups = useMemo<WeekGroup[]>(() => {
@@ -257,12 +259,23 @@ export default function NewAssignmentPage() {
     return formData[makeFormKey(weekId, fieldKey)] || '';
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !accessToken || !selectedGroup || !courseId) return;
+  const processFileUpload = async (file: File) => {
+    if (!accessToken || !selectedGroup || !courseId) return;
 
     if (file.size > 10 * 1024 * 1024) {
       setError('파일 크기는 10MB를 초과할 수 없습니다.');
+      return;
+    }
+
+    const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx'];
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!allowedExtensions.includes(ext)) {
+      setError(`지원하지 않는 파일 형식입니다. (${allowedExtensions.join(', ')})`);
+      return;
+    }
+
+    if (uploadedFiles.length >= 5) {
+      setError('최대 5개 파일까지 첨부할 수 있습니다.');
       return;
     }
 
@@ -329,6 +342,54 @@ export default function NewAssignmentPage() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (let i = 0; i < files.length; i++) {
+      if (uploadedFiles.length + i >= 5) break;
+      await processFileUpload(files[i]);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      // 여러 파일 드롭 시 순차 업로드
+      for (let i = 0; i < files.length; i++) {
+        if (uploadedFiles.length + i >= 5) break;
+        await processFileUpload(files[i]);
+      }
     }
   };
 
@@ -809,7 +870,13 @@ export default function NewAssignmentPage() {
 
           {/* ===== 파일 첨부 모드 ===== */}
           {submitMode === 'file' && (
-            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+            <div
+              className="bg-slate-800/50 rounded-xl p-6 border border-slate-700"
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
               <h3 className="text-white font-medium mb-2 flex items-center gap-2">
                 <svg className="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -855,31 +922,44 @@ export default function NewAssignmentPage() {
                     accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.md,.doc,.docx"
                     className="hidden"
                     disabled={uploading || submitting}
+                    multiple
                   />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading || submitting}
-                    className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-slate-600 hover:border-pink-500/50 rounded-xl text-slate-400 hover:text-pink-400 transition-colors disabled:opacity-50 w-full"
+                  <div
+                    onClick={() => !uploading && !submitting && fileInputRef.current?.click()}
+                    className={`flex flex-col items-center justify-center gap-3 px-4 py-10 border-2 border-dashed rounded-xl transition-all cursor-pointer w-full ${
+                      isDragging
+                        ? 'border-pink-500 bg-pink-500/10 text-pink-400 scale-[1.02]'
+                        : uploading || submitting
+                        ? 'border-slate-600 text-slate-500 opacity-50 cursor-not-allowed'
+                        : 'border-slate-600 hover:border-pink-500/50 text-slate-400 hover:text-pink-400'
+                    }`}
                   >
                     {uploading ? (
                       <>
                         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500" />
                         <span className="text-sm">업로드 중...</span>
                       </>
+                    ) : isDragging ? (
+                      <>
+                        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span className="text-sm font-semibold">여기에 놓으세요!</span>
+                      </>
                     ) : (
                       <>
                         <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        <span className="text-sm font-medium">파일을 선택하세요</span>
+                        <span className="text-sm font-medium">파일을 드래그하거나 클릭하여 선택</span>
                         <span className="text-xs text-slate-500">
                           {uploadedFiles.length > 0
                             ? `${uploadedFiles.length}/5개 첨부됨`
-                            : '클릭하여 파일 선택'}
+                            : 'PDF, 이미지, Word, TXT 등'}
                         </span>
                       </>
                     )}
-                  </button>
+                  </div>
                 </div>
               )}
 
