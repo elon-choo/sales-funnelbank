@@ -72,6 +72,10 @@ const nextConfig: NextConfig = {
     // dangerouslyAllowSVG: true,  // SVG 허용 (필요시)
   },
 
+  // @react-pdf/renderer를 서버에서 번들링하지 않고 node_modules에서 직접 로드
+  // (bundler minification이 PDFKit 내부 SHA 함수명을 깨뜨리는 문제 방지)
+  serverExternalPackages: ['@react-pdf/renderer'],
+
   // 실험적 기능
   experimental: {
     // Next.js 15에서는 serverActions가 기본 활성화
@@ -104,6 +108,25 @@ const nextConfig: NextConfig = {
 
   // 성능 최적화 (프로덕션)
   productionBrowserSourceMaps: false,  // 소스맵 비활성화 (보안+성능)
+
+  // transpilePackages에서 @react-pdf/renderer 제거 (serverExternalPackages로 이동)
+
+  // Turbopack 설정 (Next.js 16 기본)
+  turbopack: {
+    resolveAlias: {
+      canvas: { browser: './empty-module.js' },
+    },
+  },
+
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        canvas: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
