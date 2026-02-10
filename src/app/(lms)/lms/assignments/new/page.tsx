@@ -385,6 +385,15 @@ export default function NewAssignmentPage() {
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
+      // 주차 미선택 시 무시
+      if (!selectedGroup || !courseId) return;
+
+      // 파일 모드가 아니면 자동 전환
+      if (submitMode !== 'file') {
+        setSubmitMode('file');
+        setStep('form');
+      }
+
       // 여러 파일 드롭 시 순차 업로드
       for (let i = 0; i < files.length; i++) {
         if (uploadedFiles.length + i >= 5) break;
@@ -547,7 +556,25 @@ export default function NewAssignmentPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div
+      className="max-w-3xl mx-auto space-y-6 relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Page-level drag overlay */}
+      {isDragging && step !== 'form' && selectedGroup && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-pink-600/20 border-2 border-dashed border-pink-500 rounded-3xl p-16 text-center">
+            <svg className="w-16 h-16 text-pink-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-pink-400 text-xl font-semibold">여기에 파일을 놓으세요</p>
+            <p className="text-slate-400 text-sm mt-2">파일 첨부 모드로 자동 전환됩니다</p>
+          </div>
+        </div>
+      )}
       {/* Progress indicator */}
       <div className="flex items-center gap-2 text-sm">
         <button

@@ -472,10 +472,81 @@ export default function AdminAssignmentsPage() {
                 {/* Expanded Detail */}
                 {isExpanded && (
                   <div className="px-6 pb-4 border-t border-slate-700">
+                    {/* Prominent Submission Limit Control */}
+                    <div className="mt-4 mb-4 p-4 bg-amber-900/20 border border-amber-500/30 rounded-xl" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <h4 className="text-amber-400 font-medium text-sm">주차별 과제 제출 횟수 제한</h4>
+                          <p className="text-slate-400 text-xs mt-1">이 학생이 주차당 제출할 수 있는 최대 횟수입니다</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleUpdateLimit(student.enrollment.id, Math.max(1, student.enrollment.max_submissions_per_week - 1))}
+                            disabled={updatingLimit === student.enrollment.id || student.enrollment.max_submissions_per_week <= 1}
+                            className="w-9 h-9 flex items-center justify-center bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white rounded-lg transition-colors text-lg font-bold"
+                          >
+                            -
+                          </button>
+                          {updatingLimit === student.enrollment.id ? (
+                            <span className="w-16 text-center">
+                              <span className="inline-block w-5 h-5 border-t-2 border-amber-500 rounded-full animate-spin" />
+                            </span>
+                          ) : editingLimit === student.enrollment.id ? (
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              value={editLimitValue}
+                              onChange={(e) => setEditLimitValue(e.target.value)}
+                              onBlur={() => {
+                                const val = parseInt(editLimitValue);
+                                if (val >= 1 && val <= 999 && val !== student.enrollment.max_submissions_per_week) {
+                                  handleUpdateLimit(student.enrollment.id, val);
+                                }
+                                setEditingLimit(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const val = parseInt(editLimitValue);
+                                  if (val >= 1 && val <= 999 && val !== student.enrollment.max_submissions_per_week) {
+                                    handleUpdateLimit(student.enrollment.id, val);
+                                  }
+                                  setEditingLimit(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingLimit(null);
+                                }
+                              }}
+                              autoFocus
+                              className="w-16 text-center text-amber-400 font-bold text-lg bg-slate-900 border border-amber-500 rounded-lg px-2 py-1 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingLimit(student.enrollment.id);
+                                setEditLimitValue(String(student.enrollment.max_submissions_per_week));
+                              }}
+                              className="w-16 text-center text-amber-400 font-bold text-lg hover:bg-slate-700 rounded-lg px-2 py-1 transition-colors cursor-text border border-transparent hover:border-amber-500/30"
+                              title="클릭하여 직접 입력"
+                            >
+                              {student.enrollment.max_submissions_per_week}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleUpdateLimit(student.enrollment.id, student.enrollment.max_submissions_per_week + 1)}
+                            disabled={updatingLimit === student.enrollment.id || student.enrollment.max_submissions_per_week >= 999}
+                            className="w-9 h-9 flex items-center justify-center bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-white rounded-lg transition-colors text-lg font-bold"
+                          >
+                            +
+                          </button>
+                          <span className="text-sm text-slate-400">회/주차</span>
+                        </div>
+                      </div>
+                    </div>
+
                     {filteredWeeks.length === 0 ? (
                       <p className="text-slate-500 py-4 text-center">주차 데이터 없음</p>
                     ) : (
-                      <div className="mt-4 space-y-3">
+                      <div className="space-y-3">
                         {filteredWeeks.map((week) => {
                           const weekAssignments = getWeekAssignments(student, week.id);
                           const maxSubs = student.enrollment.max_submissions_per_week;
