@@ -240,30 +240,43 @@ export async function POST(request: NextRequest) {
           // 과제는 저장되었으므로 경고만 로깅
         }
 
-        // 2. 즉시 피드백 처리 트리거 (fire-and-forget: 프로세서는 별도 서버리스 함수로 실행)
+        // 2. 즉시 피드백 처리 트리거 (async after + 10초 timeout)
+        // after() 콜백이 async여야 Vercel 런타임이 fetch 연결이 성립될 때까지 대기함
+        // 프로세서는 요청을 수신하면 별도 서버리스 함수로 독립 실행되므로 client abort 후에도 계속 작동
         if (feedbackJob) {
-          after(() => {
-            const baseUrl = process.env.VERCEL_URL
-              ? `https://${process.env.VERCEL_URL}`
-              : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          after(async () => {
+            try {
+              const baseUrl = process.env.VERCEL_URL
+                ? `https://${process.env.VERCEL_URL}`
+                : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-            const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
+              const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
 
-            fetch(`${baseUrl}/api/lms/feedback-processor`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-internal-secret': internalSecret,
-              },
-              body: JSON.stringify({
-                jobId: feedbackJob.id,
-                assignmentId: assignment.id,
-              }),
-            }).then(res => {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+              const res = await fetch(`${baseUrl}/api/lms/feedback-processor`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-internal-secret': internalSecret,
+                },
+                body: JSON.stringify({
+                  jobId: feedbackJob.id,
+                  assignmentId: assignment.id,
+                }),
+                signal: controller.signal,
+              });
+              clearTimeout(timeoutId);
               console.log('[Feedback Trigger] Status:', res.status);
-            }).catch(err => {
-              console.error('[Feedback Processor Trigger Error]', err);
-            });
+            } catch (err) {
+              // AbortError는 정상 (10초 timeout으로 연결 끊김 - 프로세서는 계속 실행 중)
+              if (err instanceof Error && err.name === 'AbortError') {
+                console.log('[Feedback Trigger] Request sent, processor running independently');
+              } else {
+                console.error('[Feedback Processor Trigger Error]', err);
+              }
+            }
           });
         }
       }
