@@ -167,15 +167,26 @@ export async function POST(request: NextRequest) {
       }
 
       // 기존 과제 확인 (버전 관리)
-      const { data: existing } = await supabase
+      const { data: existingAll } = await supabase
         .from('assignments')
         .select('id, version, status')
         .eq('user_id', auth.userId)
         .eq('week_id', weekId)
         .is('deleted_at', null)
-        .order('version', { ascending: false })
-        .limit(1)
-        .single();
+        .order('version', { ascending: false });
+
+      const existing = existingAll?.[0] || null;
+
+      // 주차별 최대 2회 제출 제한 (제출된 과제만 카운트, 초안 제외)
+      if (!isDraft) {
+        const submittedCount = existingAll?.filter(a => a.status === 'submitted' || a.status === 'reviewed').length || 0;
+        if (submittedCount >= 2) {
+          return NextResponse.json(
+            { success: false, error: { code: 'LIMIT_EXCEEDED', message: '주차별 최대 2회까지만 과제를 제출할 수 있습니다.' } },
+            { status: 400 }
+          );
+        }
+      }
 
       const newVersion = existing ? existing.version + 1 : 1;
       const status = isDraft ? 'draft' : 'submitted';
