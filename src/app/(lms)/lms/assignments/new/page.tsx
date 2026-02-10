@@ -460,6 +460,8 @@ export default function NewAssignmentPage() {
         ? uploadedFiles.map(f => ({ id: f.id, name: f.file_name, type: f.file_type, size: f.file_size }))
         : undefined;
 
+      const submittedAssignmentIds: string[] = [];
+
       for (const { week, fields } of weekFieldGroups) {
         const content: Record<string, unknown> = {};
 
@@ -490,6 +492,30 @@ export default function NewAssignmentPage() {
 
         if (!response.ok || !result.success) {
           throw new Error(result.error?.message || `${week.title} 제출에 실패했습니다.`);
+        }
+
+        // 제출된 과제 ID 수집 (피드백 트리거용)
+        if (!isDraft && result.data?.assignment?.id) {
+          submittedAssignmentIds.push(result.data.assignment.id);
+        }
+      }
+
+      // 피드백 자동 트리거: 브라우저에서 직접 프로세서 호출 (202 즉시 응답)
+      if (!isDraft && submittedAssignmentIds.length > 0) {
+        for (const assignmentId of submittedAssignmentIds) {
+          try {
+            await fetch('/api/lms/feedback-processor', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ assignmentId }),
+            });
+          } catch {
+            // 트리거 실패해도 과제는 이미 저장됨 - 서버사이드 after() 백업 있음
+            console.error('[Feedback Trigger] Failed for', assignmentId);
+          }
         }
       }
 
