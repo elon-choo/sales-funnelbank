@@ -279,8 +279,8 @@ ${ragContext ? ragContext.substring(0, 80000) : '(참고 자료 없음)'}
       const feedbackStartTime = Date.now();
 
       const response = await anthropic.messages.create({
-        model: 'claude-opus-4-6',
-        max_tokens: 16000,
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 12000,
         system: systemPrompt,
         messages: [
           {
