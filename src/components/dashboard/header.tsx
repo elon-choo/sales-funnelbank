@@ -38,6 +38,7 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
     ];
 
     if (isAdmin) {
+        navItems.push({ href: '/dashboard', label: '테스트', icon: Icons.wand });
         navItems.push({ href: '/admin', label: '관리자', icon: Icons.settings });
     }
 

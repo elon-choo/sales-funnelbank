@@ -11,6 +11,8 @@ const ALLOWED_TYPES = [
   'image/gif',
   'image/webp',
   'text/plain',
+  'text/markdown',
+  'text/x-markdown',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
@@ -148,10 +150,12 @@ export async function POST(
         );
       }
 
-      // 파일 타입 확인
-      if (!ALLOWED_TYPES.includes(file.type)) {
+      // 파일 타입 확인 (확장자 기반 폴백 포함)
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx'];
+      if (!ALLOWED_TYPES.includes(file.type) && !allowedExtensions.includes(ext || '')) {
         return NextResponse.json(
-          { success: false, error: { code: 'INVALID_FILE_TYPE', message: '허용되지 않는 파일 형식입니다' } },
+          { success: false, error: { code: 'INVALID_FILE_TYPE', message: '허용되지 않는 파일 형식입니다 (PDF, 이미지, Word, TXT, MD)' } },
           { status: 400 }
         );
       }

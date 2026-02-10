@@ -37,7 +37,7 @@ export const COOKIE_CONFIG = {
 
 // 토큰 만료 시간 (밀리초)
 export const TOKEN_EXPIRY = {
-    ACCESS_TOKEN: 15 * 60 * 1000,      // 15분
+    ACCESS_TOKEN: 24 * 60 * 60 * 1000,  // 24시간
     REFRESH_TOKEN: 7 * 24 * 60 * 60 * 1000, // 7일
     REFRESH_BUFFER: 60 * 1000,         // 1분 (만료 전 갱신 버퍼)
 } as const;

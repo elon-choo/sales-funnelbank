@@ -17,7 +17,7 @@ function getJWTSecret(): Uint8Array {
 
 /**
  * Access Token 생성
- * - 15분 만료
+ * - 24시간 만료
  * - HS256 알고리즘
  */
 export async function generateAccessToken(payload: {
@@ -36,7 +36,7 @@ export async function generateAccessToken(payload: {
     })
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
         .setIssuedAt()
-        .setExpirationTime('15m')
+        .setExpirationTime('24h')
         .setIssuer('magnetic-sales-webapp')
         .setAudience('magnetic-sales-api')
         .sign(secret);

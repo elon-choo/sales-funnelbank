@@ -569,7 +569,7 @@ export default function NewAssignmentPage() {
               파일 첨부 (선택사항)
             </h3>
             <p className="text-slate-400 text-sm mb-4">
-              PDF, 이미지, Word 파일을 첨부할 수 있습니다. (최대 10MB, 5개까지)
+              PDF, 이미지, Word, TXT, MD 파일을 첨부할 수 있습니다. (최대 10MB, 5개까지)
             </p>
 
             {/* Uploaded files list */}
@@ -602,7 +602,7 @@ export default function NewAssignmentPage() {
                   ref={fileInputRef}
                   type="file"
                   onChange={handleFileUpload}
-                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.doc,.docx"
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.md,.doc,.docx"
                   className="hidden"
                   disabled={uploading || submitting}
                 />

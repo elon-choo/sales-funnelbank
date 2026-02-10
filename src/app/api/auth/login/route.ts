@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
             success: true,
             data: {
                 accessToken: accessToken,
-                expiresIn: 900, // 15분 (자체 토큰 만료 시간)
+                expiresIn: 86400, // 24시간 (자체 토큰 만료 시간)
                 user: {
                     id: authData.user.id,
                     email: authData.user.email,
