@@ -52,7 +52,7 @@ export async function GET(
       // 첨부파일 목록 조회
       const { data: files, error: filesError } = await supabase
         .from('assignment_files')
-        .select('id, file_name, file_type, file_size, storage_path, created_at')
+        .select('id, file_name, mime_type, file_size, file_path, created_at')
         .eq('assignment_id', assignmentId)
         .order('created_at', { ascending: true });
 
@@ -64,16 +64,21 @@ export async function GET(
         );
       }
 
-      // 각 파일의 공개 URL 생성
+      // 각 파일의 서명된 URL 생성 (private bucket)
       const filesWithUrls = await Promise.all(
         (files || []).map(async (file) => {
-          const { data } = supabase.storage
+          const { data } = await supabase.storage
             .from('assignment-files')
-            .getPublicUrl(file.storage_path);
+            .createSignedUrl(file.file_path, 3600); // 1시간 유효
 
           return {
-            ...file,
-            url: data.publicUrl,
+            id: file.id,
+            file_name: file.file_name,
+            file_type: file.mime_type,
+            file_size: file.file_size,
+            storage_path: file.file_path,
+            created_at: file.created_at,
+            url: data?.signedUrl || '',
           };
         })
       );
@@ -195,15 +200,15 @@ export async function POST(
         );
       }
 
-      // DB에 파일 정보 저장
+      // DB에 파일 정보 저장 (DB 컬럼명: file_path, mime_type)
       const { data: fileRecord, error: dbError } = await supabase
         .from('assignment_files')
         .insert({
           assignment_id: assignmentId,
           file_name: file.name,
-          file_type: file.type,
+          mime_type: file.type,
           file_size: file.size,
-          storage_path: storagePath,
+          file_path: storagePath,
         })
         .select()
         .single();
@@ -219,18 +224,23 @@ export async function POST(
         );
       }
 
-      // 공개 URL 생성
-      const { data: urlData } = supabase.storage
+      // 서명된 URL 생성 (private bucket)
+      const { data: urlData } = await supabase.storage
         .from('assignment-files')
-        .getPublicUrl(storagePath);
+        .createSignedUrl(storagePath, 3600);
 
       return NextResponse.json(
         {
           success: true,
           data: {
             file: {
-              ...fileRecord,
-              url: urlData.publicUrl,
+              id: fileRecord.id,
+              file_name: fileRecord.file_name,
+              file_type: fileRecord.mime_type,
+              file_size: fileRecord.file_size,
+              storage_path: fileRecord.file_path,
+              created_at: fileRecord.created_at,
+              url: urlData?.signedUrl || '',
             },
           },
         },
@@ -270,7 +280,7 @@ export async function DELETE(
         .from('assignment_files')
         .select(`
           id,
-          storage_path,
+          file_path,
           assignments!inner (
             id,
             user_id,
@@ -310,7 +320,7 @@ export async function DELETE(
       // Storage에서 파일 삭제
       const { error: storageError } = await supabase.storage
         .from('assignment-files')
-        .remove([fileRecord.storage_path]);
+        .remove([fileRecord.file_path]);
 
       if (storageError) {
         console.error('[File Storage Delete Error]', storageError);
