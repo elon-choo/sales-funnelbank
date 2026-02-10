@@ -240,32 +240,30 @@ export async function POST(request: NextRequest) {
           // 과제는 저장되었으므로 경고만 로깅
         }
 
-        // 2. 즉시 피드백 처리 트리거 (after()로 응답 후 실행 보장)
+        // 2. 즉시 피드백 처리 트리거 (fire-and-forget: 프로세서는 별도 서버리스 함수로 실행)
         if (feedbackJob) {
-          after(async () => {
-            try {
-              const baseUrl = process.env.VERCEL_URL
-                ? `https://${process.env.VERCEL_URL}`
-                : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          after(() => {
+            const baseUrl = process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-              const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
+            const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
 
-              const res = await fetch(`${baseUrl}/api/lms/feedback-processor`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-internal-secret': internalSecret,
-                },
-                body: JSON.stringify({
-                  jobId: feedbackJob.id,
-                  assignmentId: assignment.id,
-                }),
-              });
-              const result = await res.json();
-              console.log('[Feedback Trigger] Result:', result?.data?.status || result?.error);
-            } catch (err) {
+            fetch(`${baseUrl}/api/lms/feedback-processor`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-internal-secret': internalSecret,
+              },
+              body: JSON.stringify({
+                jobId: feedbackJob.id,
+                assignmentId: assignment.id,
+              }),
+            }).then(res => {
+              console.log('[Feedback Trigger] Status:', res.status);
+            }).catch(err => {
               console.error('[Feedback Processor Trigger Error]', err);
-            }
+            });
           });
         }
       }

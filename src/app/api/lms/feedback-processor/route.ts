@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import Anthropic from '@anthropic-ai/sdk';
 import nodemailer from 'nodemailer';
+import mammoth from 'mammoth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // Vercel Pro: 최대 5분 (긴 피드백 생성용)
@@ -153,17 +154,22 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          // 텍스트 기반 파일은 직접 다운로드하여 읽기
+          // 파일 확장자 및 MIME 타입 판별
+          const ext = file.file_name?.split('.').pop()?.toLowerCase() || '';
+          const mime = file.mime_type || '';
+
           const isTextFile = [
             'text/plain', 'text/markdown', 'text/x-markdown',
             'text/csv', 'text/html', 'application/json',
-          ].includes(file.mime_type || '');
-
+          ].includes(mime);
           const textExtensions = ['txt', 'md', 'csv', 'json', 'html', 'text'];
-          const ext = file.file_name?.split('.').pop()?.toLowerCase() || '';
           const isTextExtension = textExtensions.includes(ext);
 
+          const isDocx = ext === 'docx' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          const isDoc = ext === 'doc' || mime === 'application/msword';
+
           if (isTextFile || isTextExtension) {
+            // 텍스트 기반 파일: 직접 다운로드하여 읽기
             try {
               const { data: fileData, error: downloadError } = await supabase.storage
                 .from('assignment-files')
@@ -183,9 +189,59 @@ export async function POST(request: NextRequest) {
               console.error(`[Processor] File download error (${file.file_name}):`, dlError);
               textParts.push(`--- 파일: ${file.file_name} (다운로드 실패) ---`);
             }
+          } else if (isDocx) {
+            // .docx 파일: mammoth로 텍스트 추출
+            try {
+              const { data: fileData, error: downloadError } = await supabase.storage
+                .from('assignment-files')
+                .download(file.file_path);
+
+              if (!downloadError && fileData) {
+                const arrayBuffer = await fileData.arrayBuffer();
+                const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
+                const text = result.value;
+                if (text && text.trim().length > 0) {
+                  textParts.push(`--- 파일: ${file.file_name} ---\n${text}`);
+                  await supabase
+                    .from('assignment_files')
+                    .update({ extracted_text: text.substring(0, 100000) })
+                    .eq('id', file.id);
+                } else {
+                  textParts.push(`--- 파일: ${file.file_name} (내용 없음) ---`);
+                }
+              }
+            } catch (dlError) {
+              console.error(`[Processor] DOCX extract error (${file.file_name}):`, dlError);
+              textParts.push(`--- 파일: ${file.file_name} (DOCX 텍스트 추출 실패) ---`);
+            }
+          } else if (isDoc) {
+            // .doc 파일: 레거시 형식, mammoth 일부 지원
+            try {
+              const { data: fileData, error: downloadError } = await supabase.storage
+                .from('assignment-files')
+                .download(file.file_path);
+
+              if (!downloadError && fileData) {
+                const arrayBuffer = await fileData.arrayBuffer();
+                const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
+                const text = result.value;
+                if (text && text.trim().length > 0) {
+                  textParts.push(`--- 파일: ${file.file_name} ---\n${text}`);
+                  await supabase
+                    .from('assignment_files')
+                    .update({ extracted_text: text.substring(0, 100000) })
+                    .eq('id', file.id);
+                } else {
+                  textParts.push(`--- 파일: ${file.file_name} (.doc 형식 - 텍스트 추출 제한) ---`);
+                }
+              }
+            } catch (dlError) {
+              console.error(`[Processor] DOC extract error (${file.file_name}):`, dlError);
+              textParts.push(`--- 파일: ${file.file_name} (.doc 형식 - 텍스트 추출 실패) ---`);
+            }
           } else {
-            // PDF, Word, 이미지 등 바이너리 파일
-            textParts.push(`--- 파일: ${file.file_name} (${file.mime_type}, ${Math.round((file.file_size || 0) / 1024)}KB) - 텍스트 추출 불가 ---`);
+            // PDF, 이미지 등 기타 바이너리 파일
+            textParts.push(`--- 파일: ${file.file_name} (${mime}, ${Math.round((file.file_size || 0) / 1024)}KB) - 텍스트 추출 불가 ---`);
           }
         }
 
