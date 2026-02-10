@@ -183,12 +183,13 @@ export async function POST(request: NextRequest) {
 
       const existing = existingAll?.[0] || null;
 
-      // 주차별 최대 2회 제출 제한 (제출된 과제만 카운트, 초안 제외)
+      // 주차별 제출 제한 (수강 등록의 max_submissions_per_week 기반)
       if (!isDraft) {
-        const submittedCount = existingAll?.filter(a => a.status === 'submitted' || a.status === 'reviewed').length || 0;
-        if (submittedCount >= 2) {
+        const maxSubmissions = enrollment.max_submissions_per_week ?? 2;
+        const submittedCount = existingAll?.filter(a => a.status === 'submitted' || a.status === 'feedback_ready').length || 0;
+        if (submittedCount >= maxSubmissions) {
           return NextResponse.json(
-            { success: false, error: { code: 'LIMIT_EXCEEDED', message: '주차별 최대 2회까지만 과제를 제출할 수 있습니다.' } },
+            { success: false, error: { code: 'LIMIT_EXCEEDED', message: `주차별 최대 ${maxSubmissions}회까지만 과제를 제출할 수 있습니다.` } },
             { status: 400 }
           );
         }

@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
             course_id,
             status,
             email_opt_out,
+            max_submissions_per_week,
             enrolled_at,
             completed_at,
             profiles (

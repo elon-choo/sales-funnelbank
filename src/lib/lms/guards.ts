@@ -187,6 +187,7 @@ export interface EnrollmentInfo {
   courseId: string;
   enrollmentId: string;
   status: 'active' | 'completed' | 'dropped';
+  max_submissions_per_week?: number;
 }
 
 export async function withEnrollmentAuth(
@@ -221,7 +222,7 @@ export async function withEnrollmentAuth(
   // 수강생: 등록 여부 확인 (CTO-001 방안B: API 레벨 권한 검증)
   const { data: enrollment } = await supabase
     .from('course_enrollments')
-    .select('id, status')
+    .select('id, status, max_submissions_per_week')
     .eq('course_id', courseId)
     .eq('user_id', auth.userId)  // 핵심: API 레벨에서 user_id 필터
     .eq('status', 'active')
@@ -241,6 +242,7 @@ export async function withEnrollmentAuth(
     courseId,
     enrollmentId: enrollment.id,
     status: enrollment.status,
+    max_submissions_per_week: enrollment.max_submissions_per_week,
   });
 }
 
