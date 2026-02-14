@@ -62,16 +62,16 @@ export default function LmsAdminHeader({ user, onMenuClick }: LmsAdminHeaderProp
 
         {/* Right: Quick actions + User menu */}
         <div className="flex items-center gap-4">
-          {/* Student View Link */}
+          {/* Student View Switch */}
           <Link
             href="/lms/dashboard"
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-400 hover:text-purple-300 bg-purple-900/20 hover:bg-purple-900/30 border border-purple-500/30 rounded-lg transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
             </svg>
-            학생 뷰
+            <span className="hidden sm:inline">수강생 뷰</span>
+            <span className="sm:hidden">LMS</span>
           </Link>
 
           {/* Notifications */}
@@ -111,6 +111,17 @@ export default function LmsAdminHeader({ user, onMenuClick }: LmsAdminHeaderProp
                     <p className="text-sm font-medium text-white">{user.fullName}</p>
                     <p className="text-xs text-slate-400">{user.email}</p>
                   </div>
+
+                  <Link
+                    href="/lms/dashboard"
+                    onClick={() => setShowUserMenu(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-purple-400 hover:bg-purple-900/20 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    수강생 뷰로 전환
+                  </Link>
 
                   <Link
                     href="/dashboard"

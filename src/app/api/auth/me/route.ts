@@ -11,15 +11,15 @@ import { UserTier } from '@/types/auth';
 // 하드코딩된 어드민 계정 (login route와 동일)
 const HARDCODED_ADMIN = {
     email: 'admin@magneticsales.com',
-    id: '00000000-0000-0000-0000-000000000001',
+    id: '2413c0d5-726c-4063-8225-68d318c8b447',
     fullName: 'Admin',
-    tier: 'enterprise' as UserTier,
-    role: 'admin' as const,
+    tier: 'ENTERPRISE' as UserTier,
+    role: 'owner' as const,
     isApproved: true,
     createdAt: new Date().toISOString()
 };
 
-const HARDCODED_ADMIN_TOKEN_PREFIX = 'HARDCODED_ADMIN_';
+const HARDCODED_ADMIN_TOKEN_PREFIX = 'admin_refresh_';
 
 /**
  * 세션 복구/정보 조회용 API

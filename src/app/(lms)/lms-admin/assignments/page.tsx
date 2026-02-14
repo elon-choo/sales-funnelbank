@@ -42,6 +42,7 @@ interface StudentRow {
     user_id: string;
     status: string;
     max_submissions_per_week: number;
+    week_submission_overrides: Record<string, number>;
     profiles: { id: string; email: string; full_name: string | null };
   };
   assignments: StudentAssignment[];
@@ -129,6 +130,7 @@ export default function AdminAssignmentsPage() {
             user_id: userId,
             status: enrollment.status,
             max_submissions_per_week: enrollment.max_submissions_per_week ?? 2,
+            week_submission_overrides: enrollment.week_submission_overrides || {},
             profiles: enrollment.profiles,
           },
           assignments: [],
@@ -200,6 +202,33 @@ export default function AdminAssignmentsPage() {
             : s
         )
       );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '오류 발생');
+    } finally {
+      setUpdatingLimit(null);
+    }
+  };
+
+  const handleWeekLimitUpdate = async (enrollmentId: string, weekId: string, newLimit: number) => {
+    if (!accessToken) return;
+    setUpdatingLimit(enrollmentId + '_' + weekId);
+    try {
+      const res = await fetch('/api/lms/admin/submissions', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enrollmentId, weekId, weekLimit: newLimit }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || '업데이트 실패');
+      }
+      const result = await res.json();
+      // Update local state
+      setStudents(prev => prev.map(s =>
+        s.enrollment.id === enrollmentId
+          ? { ...s, enrollment: { ...s.enrollment, week_submission_overrides: result.data.week_submission_overrides || {} } }
+          : s
+      ));
     } catch (err) {
       alert(err instanceof Error ? err.message : '오류 발생');
     } finally {
@@ -549,7 +578,10 @@ export default function AdminAssignmentsPage() {
                       <div className="space-y-3">
                         {filteredWeeks.map((week) => {
                           const weekAssignments = getWeekAssignments(student, week.id);
-                          const maxSubs = student.enrollment.max_submissions_per_week;
+                          const weekOverride = student.enrollment.week_submission_overrides?.[week.id];
+                          const effectiveLimit = weekOverride ?? student.enrollment.max_submissions_per_week;
+                          const isOverridden = weekOverride !== undefined;
+                          const isUpdatingWeek = updatingLimit === student.enrollment.id + '_' + week.id;
 
                           return (
                             <div key={week.id} className="bg-slate-900/50 rounded-xl p-4">
@@ -557,9 +589,31 @@ export default function AdminAssignmentsPage() {
                                 <h4 className="text-white font-medium text-sm">
                                   {week.week_number}주차 - {week.title}
                                 </h4>
-                                <span className="text-xs text-slate-400">
-                                  {weekAssignments.length} / {maxSubs}회 제출
-                                </span>
+                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                  <span className="text-xs text-slate-400">
+                                    {weekAssignments.length} / {effectiveLimit}회
+                                  </span>
+                                  {isUpdatingWeek ? (
+                                    <span className="w-4 h-4 border-t-2 border-amber-500 rounded-full animate-spin inline-block" />
+                                  ) : (
+                                    <button
+                                      onClick={() => handleWeekLimitUpdate(student.enrollment.id, week.id, effectiveLimit + 1)}
+                                      className="text-[10px] px-1.5 py-0.5 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-colors"
+                                      title="이 주차 제출 1회 추가"
+                                    >
+                                      +1회
+                                    </button>
+                                  )}
+                                  {isOverridden && (
+                                    <button
+                                      onClick={() => handleWeekLimitUpdate(student.enrollment.id, week.id, 0)}
+                                      className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors"
+                                      title="기본값으로 초기화"
+                                    >
+                                      초기화
+                                    </button>
+                                  )}
+                                </div>
                               </div>
 
                               {weekAssignments.length === 0 ? (

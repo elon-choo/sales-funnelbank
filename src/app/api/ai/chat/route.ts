@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // 하드코딩된 어드민 ID (guards.ts와 동일)
-const HARDCODED_ADMIN_ID = '00000000-0000-0000-0000-000000000001';
+const HARDCODED_ADMIN_ID = '2413c0d5-726c-4063-8225-68d318c8b447';
 
 // 히스토리 최대 토큰 (컨텍스트 절반 정도)
 const MAX_HISTORY_TOKENS = 50000;

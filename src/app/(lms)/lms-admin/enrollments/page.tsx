@@ -16,6 +16,8 @@ interface Enrollment {
     id: string;
     email: string;
     full_name: string | null;
+    role: string;
+    tier: string;
   };
   courses: {
     id: string;
@@ -37,27 +39,45 @@ const statusLabels: Record<string, { text: string; color: string }> = {
   suspended: { text: '일시 정지', color: 'bg-yellow-600/20 text-yellow-400' },
 };
 
+const roleLabels: Record<string, { text: string; color: string }> = {
+  user: { text: '수강생', color: 'bg-slate-600/20 text-slate-400' },
+  premium: { text: 'Premium', color: 'bg-purple-600/20 text-purple-400' },
+  admin: { text: 'Admin', color: 'bg-amber-600/20 text-amber-400' },
+  owner: { text: 'Owner', color: 'bg-red-600/20 text-red-400' },
+};
+
+const PAGE_SIZE = 50;
+
 export default function EnrollmentsAdminPage() {
-  const { accessToken } = useAuthStore();
+  const { accessToken, user: currentUser } = useAuthStore();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newEnrollment, setNewEnrollment] = useState({
     userEmail: '',
     courseId: '',
   });
 
-  const fetchData = async () => {
+  const isOwner = currentUser?.role === 'owner';
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const fetchData = async (page = currentPage) => {
     if (!accessToken) return;
 
     try {
-      // Fetch enrollments
+      const offset = (page - 1) * PAGE_SIZE;
       const params = new URLSearchParams();
+      params.append('limit', String(PAGE_SIZE));
+      params.append('offset', String(offset));
       if (selectedCourse !== 'all') params.append('courseId', selectedCourse);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
 
@@ -76,7 +96,10 @@ export default function EnrollmentsAdminPage() {
       const enrollmentsData = await enrollmentsRes.json();
       const coursesData = await coursesRes.json();
 
-      if (enrollmentsData.success) setEnrollments(enrollmentsData.data.enrollments || []);
+      if (enrollmentsData.success) {
+        setEnrollments(enrollmentsData.data.enrollments || []);
+        setTotalCount(enrollmentsData.data.total || enrollmentsData.data.enrollments?.length || 0);
+      }
       if (coursesData.success) setCourses(coursesData.data.courses || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '오류가 발생했습니다');
@@ -86,8 +109,13 @@ export default function EnrollmentsAdminPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    setCurrentPage(1);
+    fetchData(1);
   }, [accessToken, selectedCourse, selectedStatus]);
+
+  useEffect(() => {
+    fetchData(currentPage);
+  }, [currentPage]);
 
   const handleAddEnrollment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,6 +176,38 @@ export default function EnrollmentsAdminPage() {
     }
   };
 
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    if (!accessToken) return;
+    setRoleChanging(userId);
+    setToast(null);
+    try {
+      const res = await fetch('/api/lms/admin/roles', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ userId, newRole }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.error?.message || '역할 변경 실패');
+      }
+      // Update local state
+      setEnrollments(enrollments.map(e =>
+        e.user_id === userId
+          ? { ...e, profiles: { ...e.profiles, role: newRole, tier: result.data.tier } }
+          : e
+      ));
+      setToast({ type: 'success', text: `${result.data.email} → ${roleLabels[newRole]?.text || newRole} 변경 완료` });
+    } catch (err) {
+      setToast({ type: 'error', text: err instanceof Error ? err.message : '역할 변경 실패' });
+    } finally {
+      setRoleChanging(null);
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -199,9 +259,21 @@ export default function EnrollmentsAdminPage() {
           <option value="suspended">일시 정지</option>
         </select>
         <span className="text-slate-400 text-sm">
-          총 {enrollments.length}명
+          총 {totalCount}명
+          {totalPages > 1 && ` (${currentPage}/${totalPages} 페이지)`}
         </span>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl border shadow-lg text-sm ${
+          toast.type === 'success'
+            ? 'bg-green-900/90 border-green-500/50 text-green-300'
+            : 'bg-red-900/90 border-red-500/50 text-red-300'
+        }`}>
+          {toast.text}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 text-red-400">
@@ -224,6 +296,7 @@ export default function EnrollmentsAdminPage() {
             <thead>
               <tr className="border-b border-slate-700">
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">수강생</th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">역할</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">기수</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">등록일</th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">상태</th>
@@ -247,6 +320,36 @@ export default function EnrollmentsAdminPage() {
                         <p className="text-sm text-slate-400">{enrollment.profiles?.email}</p>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const userRole = enrollment.profiles?.role || 'user';
+                      const targetIsAdmin = userRole === 'admin' || userRole === 'owner';
+                      const isSelf = enrollment.user_id === currentUser?.id;
+                      // Can change role: admin can change non-admin, owner can change anyone (except self)
+                      const canChange = !isSelf && (isOwner || !targetIsAdmin);
+
+                      return canChange ? (
+                        <select
+                          value={userRole}
+                          onChange={(e) => handleRoleChange(enrollment.user_id, e.target.value)}
+                          disabled={roleChanging === enrollment.user_id}
+                          className={`px-2 py-1 rounded text-xs font-medium border-0 focus:ring-2 focus:ring-amber-500 cursor-pointer ${
+                            roleLabels[userRole]?.color || 'bg-slate-600/20 text-slate-400'
+                          } ${roleChanging === enrollment.user_id ? 'opacity-50' : ''}`}
+                        >
+                          <option value="user">수강생</option>
+                          <option value="premium">Premium</option>
+                          <option value="admin">Admin</option>
+                          {isOwner && <option value="owner">Owner</option>}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${roleLabels[userRole]?.color || 'bg-slate-600/20 text-slate-400'}`}>
+                          {roleLabels[userRole]?.text || userRole}
+                          {isSelf && <span className="ml-1 text-[10px] opacity-60">(나)</span>}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-white">{enrollment.courses?.title}</span>
@@ -277,6 +380,64 @@ export default function EnrollmentsAdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            &laquo;
+          </button>
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            &lsaquo; 이전
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+            .reduce<(number | 'dot')[]>((acc, p, i, arr) => {
+              if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('dot');
+              acc.push(p);
+              return acc;
+            }, [])
+            .map((item, idx) =>
+              item === 'dot' ? (
+                <span key={`dot-${idx}`} className="px-2 text-slate-500">...</span>
+              ) : (
+                <button
+                  key={item}
+                  onClick={() => setCurrentPage(item as number)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === item
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {item}
+                </button>
+              )
+            )}
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            다음 &rsaquo;
+          </button>
+          <button
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            &raquo;
+          </button>
         </div>
       )}
 

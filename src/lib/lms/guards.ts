@@ -86,8 +86,8 @@ async function authenticateLmsRequest(
       return null;
     }
 
-    // lms_role은 role 또는 tier 기반으로 결정 (lms_role 컬럼이 없을 경우)
-    const lmsRole: LmsRole = (profile.role === 'admin' || profile.tier === 'ENTERPRISE') ? 'admin' : 'student';
+    // lms_role은 role 또는 tier 기반으로 결정 (owner/admin → admin 역할)
+    const lmsRole: LmsRole = (profile.role === 'admin' || profile.role === 'owner' || profile.tier === 'ENTERPRISE') ? 'admin' : 'student';
 
     return {
       userId: payload.sub,
@@ -188,6 +188,7 @@ export interface EnrollmentInfo {
   enrollmentId: string;
   status: 'active' | 'completed' | 'dropped';
   max_submissions_per_week?: number;
+  week_submission_overrides?: Record<string, number>;
 }
 
 export async function withEnrollmentAuth(
@@ -222,7 +223,7 @@ export async function withEnrollmentAuth(
   // 수강생: 등록 여부 확인 (CTO-001 방안B: API 레벨 권한 검증)
   const { data: enrollment } = await supabase
     .from('course_enrollments')
-    .select('id, status, max_submissions_per_week')
+    .select('id, status, max_submissions_per_week, week_submission_overrides')
     .eq('course_id', courseId)
     .eq('user_id', auth.userId)  // 핵심: API 레벨에서 user_id 필터
     .eq('status', 'active')
@@ -243,6 +244,7 @@ export async function withEnrollmentAuth(
     enrollmentId: enrollment.id,
     status: enrollment.status,
     max_submissions_per_week: enrollment.max_submissions_per_week,
+    week_submission_overrides: enrollment.week_submission_overrides as Record<string, number> | undefined,
   });
 }
 

@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
             deadline,
             assignment_type,
             max_score,
+            video_url,
+            video_visible,
             created_at,
             updated_at
           `)
@@ -90,7 +92,9 @@ export async function GET(request: NextRequest) {
           unlock_date,
           deadline,
           assignment_type,
-          max_score
+          max_score,
+          video_url,
+          video_visible
         `)
         .eq('course_id', courseId)
         .eq('is_active', true)

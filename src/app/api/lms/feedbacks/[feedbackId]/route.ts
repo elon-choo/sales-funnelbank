@@ -56,7 +56,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
 
       // 권한 확인
-      if (auth.lmsRole !== 'admin' && auth.tier !== 'ENTERPRISE') {
+      const isAdmin = auth.lmsRole === 'admin' || auth.tier === 'ENTERPRISE';
+
+      if (!isAdmin) {
         if (feedback.user_id !== auth.userId) {
           return NextResponse.json(
             { success: false, error: { code: 'FORBIDDEN', message: '접근 권한이 없습니다' } },
@@ -78,9 +80,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         });
       }
 
+      // 관리자: 학생 프로필 정보 포함
+      const { data: studentProfile } = await supabase
+        .from('profiles')
+        .select('id, email, full_name')
+        .eq('id', feedback.user_id)
+        .single();
+
       return NextResponse.json({
         success: true,
-        data: { feedback },
+        data: {
+          feedback,
+          studentProfile: studentProfile || null,
+          isAdminView: true,
+        },
       });
     } catch (error) {
       console.error('[Feedback GET Error]', error);

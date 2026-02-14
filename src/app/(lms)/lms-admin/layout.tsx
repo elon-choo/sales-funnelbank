@@ -34,7 +34,7 @@ export default function LmsAdminLayout({
       }
 
       // 관리자 권한 확인 (ENTERPRISE tier 또는 admin role)
-      const isAdmin = user?.tier === 'ENTERPRISE' || user?.role === 'admin';
+      const isAdmin = user?.tier === 'ENTERPRISE' || user?.role === 'admin' || user?.role === 'owner';
       if (!isAdmin) {
         router.push('/lms/dashboard');
       }
@@ -57,7 +57,7 @@ export default function LmsAdminLayout({
   }
 
   // 관리자 권한 재확인
-  const isAdmin = user.tier === 'ENTERPRISE' || user.role === 'admin';
+  const isAdmin = user.tier === 'ENTERPRISE' || user.role === 'admin' || user.role === 'owner';
   if (!isAdmin) {
     return null;
   }

@@ -108,7 +108,7 @@ async function fetchAdminDashboard(supabase: ReturnType<typeof import('@/lib/sup
     total: assignments?.length || 0,
     draft: assignments?.filter((a) => a.status === 'draft').length || 0,
     submitted: assignments?.filter((a) => a.status === 'submitted').length || 0,
-    reviewed: assignments?.filter((a) => a.status === 'reviewed').length || 0,
+    reviewed: assignments?.filter((a) => a.status === 'feedback_ready').length || 0,
   };
 
   // 피드백 작업 통계 (최근 24시간)
@@ -220,7 +220,7 @@ async function fetchStudentDashboard(supabase: ReturnType<typeof import('@/lib/s
     total: assignments?.length || 0,
     draft: assignments?.filter((a) => a.status === 'draft').length || 0,
     submitted: assignments?.filter((a) => a.status === 'submitted').length || 0,
-    reviewed: assignments?.filter((a) => a.status === 'reviewed').length || 0,
+    reviewed: assignments?.filter((a) => a.status === 'feedback_ready').length || 0,
   };
 
   // 진행 중인 피드백 작업
@@ -245,7 +245,7 @@ async function fetchStudentDashboard(supabase: ReturnType<typeof import('@/lib/s
     .from('feedbacks')
     .select(`
       id,
-      score,
+      scores,
       created_at,
       assignments!inner (
         id,
@@ -259,10 +259,12 @@ async function fetchStudentDashboard(supabase: ReturnType<typeof import('@/lib/s
     .order('created_at', { ascending: false })
     .limit(5);
 
-  // 평균 점수 계산
-  const scores = recentFeedbacks?.map((f) => f.score).filter((s): s is number => s !== null) || [];
-  const averageScore = scores.length > 0
-    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10
+  // 평균 점수 계산 (scores는 JSON: {total: number})
+  const allScores = recentFeedbacks
+    ?.map((f) => (f.scores as Record<string, number> | null)?.total)
+    .filter((s): s is number => s != null) || [];
+  const averageScore = allScores.length > 0
+    ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length * 10) / 10
     : null;
 
   return {

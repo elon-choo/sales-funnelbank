@@ -24,12 +24,15 @@ export async function GET(request: NextRequest) {
             status,
             email_opt_out,
             max_submissions_per_week,
+            week_submission_overrides,
             enrolled_at,
             completed_at,
             profiles (
               id,
               email,
-              full_name
+              full_name,
+              role,
+              tier
             ),
             courses (
               id,

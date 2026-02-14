@@ -56,17 +56,17 @@ export default function LmsHeader({ user, onMenuClick }: LmsHeaderProps) {
 
         {/* Right: User menu */}
         <div className="flex items-center gap-4">
-          {/* Admin Link */}
+          {/* Admin Switch */}
           {isAdmin && (
             <Link
               href="/lms-admin/dashboard"
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-900/20 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-400 hover:text-amber-300 bg-amber-900/20 hover:bg-amber-900/30 border border-amber-500/30 rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
-              관리자
+              <span className="hidden sm:inline">관리자 모드</span>
+              <span className="sm:hidden">Admin</span>
             </Link>
           )}
 
@@ -113,6 +113,19 @@ export default function LmsHeader({ user, onMenuClick }: LmsHeaderProps) {
                     </svg>
                     프로필
                   </Link>
+
+                  {isAdmin && (
+                    <Link
+                      href="/lms-admin/dashboard"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-amber-400 hover:bg-amber-900/20 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      관리자 모드로 전환
+                    </Link>
+                  )}
 
                   <Link
                     href="/dashboard"

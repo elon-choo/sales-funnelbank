@@ -92,14 +92,15 @@ export async function GET(request: NextRequest) {
     };
 
     // ============================================================
-    // 1. 좀비 작업 복구 (5분 이상 processing 상태)
+    // 1. 좀비 작업 복구 (15분 이상 processing 상태)
+    // Opus 4.6 + 30K tokens는 7~12분 소요 → 15분 이상이면 진짜 좀비
     // ============================================================
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { data: zombieJobs } = await supabase
       .from('feedback_jobs')
       .select('id, attempts')
       .eq('status', 'processing')
-      .lt('started_at', fiveMinutesAgo);
+      .lt('started_at', fifteenMinutesAgo);
 
     if (zombieJobs && zombieJobs.length > 0) {
       for (const zombie of zombieJobs) {
@@ -109,7 +110,7 @@ export async function GET(request: NextRequest) {
             .from('feedback_jobs')
             .update({
               status: 'failed',
-              error_message: 'Zombie job: processing timeout (5min)',
+              error_message: 'Zombie job: processing timeout (15min)',
               completed_at: new Date().toISOString(),
             })
             .eq('id', zombie.id);
@@ -153,7 +154,6 @@ export async function GET(request: NextRequest) {
         .from('feedback_jobs')
         .select('id, assignment_id')
         .eq('status', 'pending')
-        .order('priority', { ascending: false })
         .order('created_at', { ascending: true })
         .limit(availableSlots);
 

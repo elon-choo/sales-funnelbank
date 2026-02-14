@@ -9,7 +9,7 @@ import { verifyCustomJWT } from '@/lib/auth/tokens';
 import type { AuthResult, UserTier, UserRole } from '@/types/auth';
 
 // 하드코딩된 어드민 ID (login/me route와 동일)
-const HARDCODED_ADMIN_ID = '00000000-0000-0000-0000-000000000001';
+const HARDCODED_ADMIN_ID = '2413c0d5-726c-4063-8225-68d318c8b447';
 
 /**
  * API Route에서 인증 확인

@@ -1,6 +1,6 @@
 
-export type UserTier = 'FREE' | 'PRO' | 'ENTERPRISE';
-export type UserRole = 'user' | 'admin';
+export type UserTier = 'FREE' | 'PREMIUM' | 'PRO' | 'ENTERPRISE';
+export type UserRole = 'user' | 'premium' | 'admin' | 'owner';
 export type CourseType = 'SALES_FUNNEL' | 'MAGNETIC_SALES';
 
 export interface User {

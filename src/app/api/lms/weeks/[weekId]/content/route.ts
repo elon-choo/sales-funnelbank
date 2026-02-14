@@ -27,6 +27,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           is_active,
           content_json,
           video_url,
+          video_title,
+          video_duration,
+          video_thumbnail,
+          video_visible,
           materials,
           created_at,
           updated_at
@@ -101,6 +105,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         isActive,
         contentJson,
         videoUrl,
+        videoTitle,
+        videoDuration,
+        videoThumbnail,
+        videoVisible,
         materials,
         fieldConfigs,
       } = body;
@@ -115,6 +123,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (isActive !== undefined) updateData.is_active = isActive;
       if (contentJson !== undefined) updateData.content_json = contentJson;
       if (videoUrl !== undefined) updateData.video_url = videoUrl;
+      if (videoTitle !== undefined) updateData.video_title = videoTitle;
+      if (videoDuration !== undefined) updateData.video_duration = videoDuration;
+      if (videoThumbnail !== undefined) updateData.video_thumbnail = videoThumbnail;
+      if (videoVisible !== undefined) updateData.video_visible = videoVisible;
       if (materials !== undefined) updateData.materials = materials;
 
       const { error: updateError } = await supabase

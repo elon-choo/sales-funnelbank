@@ -71,12 +71,12 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// POST /api/lms/rag - RAG 데이터셋 생성 + 청크 분할
+// POST /api/lms/rag - RAG 데이터셋 생성 + 청크 분할 + pgvector 임베딩
 export async function POST(request: NextRequest) {
   return withLmsAdminAuth(request, async (auth, supabase) => {
     try {
       const body = await request.json();
-      const { name, content, category, chunkSize = 1500, chunkOverlap = 200 } = body;
+      const { name, content, category, weekId, chunkSize = 1500, chunkOverlap = 200 } = body;
 
       if (!name || !content) {
         return NextResponse.json(
@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
           chunk_count: 0,
           version: 1,
           is_active: true,
+          uploaded_by: auth.userId,
         })
         .select()
         .single();
@@ -110,16 +111,17 @@ export async function POST(request: NextRequest) {
       // 2. 텍스트 청크 분할
       const chunks = splitTextIntoChunks(content, chunkSize, chunkOverlap);
 
-      // 3. 청크 저장
+      // 3. 청크 저장 (rag_chunks)
       const chunkRecords = chunks.map((chunkContent, index) => ({
         dataset_id: dataset.id,
         chunk_index: index,
-        category: category || 'general',
+        category: category || name,
         chunk_type: 'text',
         content: chunkContent,
         metadata: {
           charCount: chunkContent.length,
           wordCount: chunkContent.split(/\s+/).length,
+          source: name,
         },
       }));
 
@@ -129,7 +131,6 @@ export async function POST(request: NextRequest) {
 
       if (chunksError) {
         console.error('[RAG Chunks Create Error]', chunksError);
-        // 데이터셋은 생성되었지만 청크 실패 - 비활성화
         await supabase.from('rag_datasets').update({ is_active: false }).eq('id', dataset.id);
         return NextResponse.json(
           { success: false, error: { code: 'DB_ERROR', message: '청크 저장 실패' } },
@@ -137,7 +138,80 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 4. 데이터셋 청크 카운트 업데이트
+      // 4. pgvector 임베딩 생성 + seperma_5th_feedback_rag 저장
+      let embeddingCount = 0;
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (openaiKey) {
+        try {
+          // Batch embed (max 100 per request)
+          const batchSize = 50;
+          for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const embResp = await fetch('https://api.openai.com/v1/embeddings', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${openaiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ model: 'text-embedding-3-small', input: batch }),
+            });
+
+            if (embResp.ok) {
+              const embData = await embResp.json();
+              const embeddings = (embData.data || [])
+                .sort((a: { index: number }, b: { index: number }) => a.index - b.index)
+                .map((d: { embedding: number[] }) => d.embedding);
+
+              // Insert into seperma_5th_feedback_rag with pgvector
+              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+              const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+              if (supabaseUrl && supabaseServiceKey) {
+                for (let j = 0; j < batch.length; j++) {
+                  if (!embeddings[j]) continue;
+                  const chunkIdx = i + j;
+                  const id = `${name.replace(/[^a-zA-Z0-9_가-힣]/g, '_')}_${String(chunkIdx + 1).padStart(3, '0')}`;
+
+                  await fetch(`${supabaseUrl}/rest/v1/seperma_5th_feedback_rag`, {
+                    method: 'POST',
+                    headers: {
+                      'apikey': supabaseServiceKey,
+                      'Authorization': `Bearer ${supabaseServiceKey}`,
+                      'Content-Type': 'application/json',
+                      'Prefer': 'resolution=merge-duplicates',
+                    },
+                    body: JSON.stringify({
+                      id,
+                      category: category || name,
+                      type: 'uploaded',
+                      content: batch[j],
+                      metadata: { source: name, chunkIndex: chunkIdx, uploadedBy: auth.userId },
+                      embedding: `[${embeddings[j].join(',')}]`,
+                    }),
+                  });
+                  embeddingCount++;
+                }
+              }
+            } else {
+              console.error('[RAG] Embedding API error:', await embResp.text());
+            }
+          }
+          console.log(`[RAG] Created ${embeddingCount} embeddings for dataset ${name}`);
+        } catch (embErr) {
+          console.error('[RAG] Embedding error (non-fatal):', embErr);
+          // Non-fatal: rag_chunks were saved, just no embeddings
+        }
+      }
+
+      // 5. 주차 매핑 (weekId가 있으면)
+      if (weekId) {
+        await supabase.from('rag_week_mappings').insert({
+          week_id: weekId,
+          rag_dataset_id: dataset.id,
+        });
+      }
+
+      // 6. 데이터셋 청크 카운트 업데이트
       await supabase
         .from('rag_datasets')
         .update({ chunk_count: chunks.length })
@@ -149,6 +223,8 @@ export async function POST(request: NextRequest) {
           data: {
             dataset: { ...dataset, chunk_count: chunks.length },
             chunksCreated: chunks.length,
+            embeddingsCreated: embeddingCount,
+            weekMapped: !!weekId,
           },
         },
         { status: 201 }

@@ -13,7 +13,7 @@ import { LoginRequest, UserTier } from '@/types/auth';
 const HARDCODED_ADMIN = {
     email: 'admin@magneticsales.com',
     password: 'Admin123!',
-    id: '00000000-0000-0000-0000-000000000001',
+    id: '2413c0d5-726c-4063-8225-68d318c8b447',
     fullName: 'Admin',
     tier: 'enterprise' as UserTier,
     role: 'admin' as const,
@@ -41,26 +41,31 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 하드코딩된 어드민 계정 체크 (백업용)
+        // 하드코딩된 어드민 계정 체크 (백업용) - 실제 JWT 발급
         if (email === HARDCODED_ADMIN.email && password === HARDCODED_ADMIN.password) {
+            const adminAccessToken = await generateAccessToken({
+                userId: HARDCODED_ADMIN.id,
+                email: HARDCODED_ADMIN.email,
+                tier: 'ENTERPRISE' as UserTier,
+                role: 'owner',
+            });
             const response = NextResponse.json({
                 success: true,
                 data: {
-                    accessToken: 'HARDCODED_ADMIN_TOKEN',
-                    expiresIn: 3600,
+                    accessToken: adminAccessToken,
+                    expiresIn: 86400,
                     user: {
                         id: HARDCODED_ADMIN.id,
                         email: HARDCODED_ADMIN.email,
                         fullName: HARDCODED_ADMIN.fullName,
-                        tier: HARDCODED_ADMIN.tier,
-                        role: HARDCODED_ADMIN.role,
+                        tier: 'ENTERPRISE',
+                        role: 'owner',
                         isApproved: HARDCODED_ADMIN.isApproved,
                         createdAt: HARDCODED_ADMIN.createdAt
                     }
                 }
             });
-            // Refresh Token 쿠키 설정
-            response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, 'HARDCODED_ADMIN_REFRESH_' + Date.now(), {
+            response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, 'admin_refresh_' + Date.now(), {
                 ...COOKIE_CONFIG.options,
                 maxAge: COOKIE_CONFIG.maxAge.REFRESH_TOKEN,
             });

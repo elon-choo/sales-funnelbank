@@ -6,8 +6,8 @@ export type Json =
     | { [key: string]: Json | undefined }
     | Json[];
 
-export type UserTier = 'FREE' | 'PRO' | 'ENTERPRISE';
-export type UserRole = 'user' | 'admin';
+export type UserTier = 'FREE' | 'PREMIUM' | 'PRO' | 'ENTERPRISE';
+export type UserRole = 'user' | 'premium' | 'admin' | 'owner';
 export type LandingPageStatus = 'draft' | 'published' | 'archived';
 export type ChatSessionStatus = 'active' | 'archived' | 'deleted';
 export type ChatMessageRole = 'user' | 'assistant' | 'system';

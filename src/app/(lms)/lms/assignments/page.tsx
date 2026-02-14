@@ -1,8 +1,8 @@
 // src/app/(lms)/lms/assignments/page.tsx
-// 학생 과제 목록 페이지
+// 학생 과제 목록 페이지 - 주차별 그룹핑
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import Link from 'next/link';
 
@@ -42,6 +42,19 @@ interface Assignment {
     deadline: string | null;
     assignment_type: string;
   };
+}
+
+interface WeekAssignmentGroup {
+  weekNumber: number;
+  courseName: string;
+  // Latest assignment per sub-week (week_id)
+  subAssignments: {
+    assignment: Assignment;
+    job: FeedbackJob | null;
+    feedback: FeedbackInfo | null;
+  }[];
+  overallStatus: string;
+  hasProcessing: boolean;
 }
 
 const statusLabels: Record<string, { text: string; color: string; icon?: string }> = {
@@ -134,11 +147,72 @@ export default function AssignmentsPage() {
     fetchAssignments();
   }, [accessToken, statusFilter]);
 
+  // Group assignments by week_number, keeping latest per sub-week (week_id)
+  const weekGroups = useMemo<WeekAssignmentGroup[]>(() => {
+    // Get latest non-draft assignment per week_id, or latest draft if no submitted
+    const latestByWeekId = new Map<string, Assignment>();
+    for (const a of assignments) {
+      const weekId = a.course_weeks?.id;
+      if (!weekId) continue;
+      const existing = latestByWeekId.get(weekId);
+      if (!existing) {
+        latestByWeekId.set(weekId, a);
+      } else {
+        // Prefer feedback_ready > submitted > processing > draft, then latest version
+        const statusPriority = (s: string) =>
+          s === 'feedback_ready' ? 4 : s === 'submitted' ? 3 : s === 'processing' ? 2 : 1;
+        if (statusPriority(a.status) > statusPriority(existing.status) ||
+            (statusPriority(a.status) === statusPriority(existing.status) && a.version > existing.version)) {
+          latestByWeekId.set(weekId, a);
+        }
+      }
+    }
+
+    // Group by week_number
+    const weekMap = new Map<number, Assignment[]>();
+    for (const a of latestByWeekId.values()) {
+      const weekNum = a.course_weeks?.week_number;
+      if (weekNum == null) continue;
+      if (!weekMap.has(weekNum)) weekMap.set(weekNum, []);
+      weekMap.get(weekNum)!.push(a);
+    }
+
+    return Array.from(weekMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([weekNumber, assigns]) => {
+        const subAssignments = assigns
+          .sort((a, b) => (a.course_weeks?.title || '').localeCompare(b.course_weeks?.title || ''))
+          .map(a => ({
+            assignment: a,
+            job: feedbackJobs.get(a.id) || null,
+            feedback: feedbacks.get(a.id) || null,
+          }));
+
+        // Overall status: worst status wins
+        const statuses = subAssignments.map(sa => {
+          if (sa.feedback) return 'feedback_ready';
+          if (sa.job && (sa.job.status === 'pending' || sa.job.status === 'processing')) return 'processing';
+          return sa.assignment.status;
+        });
+        const overallStatus = statuses.includes('processing') ? 'processing'
+          : statuses.includes('submitted') ? 'submitted'
+          : statuses.every(s => s === 'feedback_ready') ? 'feedback_ready'
+          : statuses.every(s => s === 'draft') ? 'draft'
+          : 'submitted';
+
+        return {
+          weekNumber,
+          courseName: assigns[0]?.courses?.title || '',
+          subAssignments,
+          overallStatus,
+          hasProcessing: statuses.includes('processing') || statuses.includes('submitted'),
+        };
+      });
+  }, [assignments, feedbackJobs, feedbacks]);
+
   // 처리 중인 과제가 있으면 10초마다 폴링
   useEffect(() => {
-    const hasProcessing = assignments.some(
-      (a) => a.status === 'submitted' || a.status === 'processing'
-    );
+    const hasProcessing = weekGroups.some(g => g.hasProcessing);
     if (!hasProcessing) return;
 
     const interval = setInterval(() => {
@@ -146,7 +220,7 @@ export default function AssignmentsPage() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [assignments, accessToken]);
+  }, [weekGroups, accessToken]);
 
   if (loading) {
     return (
@@ -206,8 +280,8 @@ export default function AssignmentsPage() {
         ))}
       </div>
 
-      {/* Assignment List */}
-      {assignments.length === 0 ? (
+      {/* Assignment List - Grouped by Week */}
+      {weekGroups.length === 0 ? (
         <div className="bg-slate-800/50 rounded-2xl p-12 border border-slate-700 text-center">
           <svg className="w-16 h-16 text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -221,114 +295,122 @@ export default function AssignmentsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {assignments.map((assignment) => {
-            const job = feedbackJobs.get(assignment.id);
-            const fb = feedbacks.get(assignment.id);
-            const isGenerating = job && (job.status === 'pending' || job.status === 'processing');
-            const isFailed = job?.status === 'failed';
-            const hasFeedback = !!fb;
-            const emailSent = !!fb?.sent_at;
-
-            // 실제 표시 상태 결정
-            let displayStatus = assignment.status;
-            if (isGenerating) displayStatus = 'processing';
-            if (hasFeedback) displayStatus = 'feedback_ready';
+          {weekGroups.map((group) => {
+            const allFeedbackReady = group.overallStatus === 'feedback_ready';
+            const anyProcessing = group.hasProcessing;
 
             return (
-              <Link
-                key={assignment.id}
-                href={hasFeedback ? `/lms/feedbacks/${fb.id}` : `/lms/assignments/${assignment.id}`}
-                className="block bg-slate-800/50 rounded-xl p-6 border border-slate-700 hover:border-purple-500/50 transition-all hover:shadow-lg hover:shadow-purple-500/5"
+              <div
+                key={group.weekNumber}
+                className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4">
+                {/* Week Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+                  <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center flex-shrink-0">
                       <span className="text-lg font-bold text-purple-400">
-                        {assignment.course_weeks?.week_number || '?'}
+                        {group.weekNumber}
                       </span>
                     </div>
                     <div>
-                      <h3 className="font-semibold text-white">
-                        {assignment.course_weeks?.week_number}주차: {assignment.course_weeks?.title || '과제'}
-                      </h3>
-                      <p className="text-sm text-slate-400 mt-1">
-                        {assignment.courses?.title}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2">
-                        <span className="text-xs text-slate-500">
-                          버전 {assignment.version}
-                        </span>
-                        {assignment.submitted_at && (
-                          <span className="text-xs text-slate-500">
-                            제출: {new Date(assignment.submitted_at).toLocaleDateString('ko-KR')}
-                          </span>
-                        )}
-                        {assignment.course_weeks?.deadline && (
-                          <span className="text-xs text-slate-500">
-                            마감: {new Date(assignment.course_weeks.deadline).toLocaleDateString('ko-KR')}
-                          </span>
-                        )}
-                      </div>
+                      <h3 className="font-semibold text-white">{group.weekNumber}주차 과제</h3>
+                      <p className="text-sm text-slate-400">{group.courseName}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-3">
-                      {/* 점수 표시 */}
-                      {fb?.scores?.total != null && (
-                        <span className={`px-3 py-1 rounded-xl text-sm font-bold ${
-                          fb.scores.total >= 80 ? 'bg-green-600/20 text-green-400' :
-                          fb.scores.total >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
-                          'bg-red-600/20 text-red-400'
-                        }`}>
-                          {fb.scores.total}점
-                        </span>
-                      )}
-                      {/* 상태 뱃지 */}
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
-                        statusLabels[displayStatus]?.color || 'bg-slate-600/20 text-slate-400'
-                      }`}>
-                        {isGenerating && (
-                          <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                        )}
-                        {statusLabels[displayStatus]?.text || displayStatus}
-                      </span>
-                      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                    {/* 발송 상태 */}
-                    {emailSent && (
-                      <span className="text-xs text-emerald-400 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        이메일 발송됨
-                      </span>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
+                    statusLabels[group.overallStatus]?.color || 'bg-slate-600/20 text-slate-400'
+                  }`}>
+                    {anyProcessing && (
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
                     )}
-                    {isFailed && (
-                      <span className="text-xs text-red-400 flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        피드백 생성 실패
-                      </span>
-                    )}
-                  </div>
+                    {statusLabels[group.overallStatus]?.text || group.overallStatus}
+                  </span>
                 </div>
 
-                {/* 피드백 생성 중 프로그레스 바 */}
-                {isGenerating && (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-yellow-400">
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-yellow-400" />
-                      <span>AI가 과제를 분석하고 있습니다...</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full animate-[progress_3s_ease-in-out_infinite]" style={{ width: '60%' }} />
-                    </div>
-                  </div>
-                )}
-              </Link>
+                {/* Sub-assignments */}
+                <div className="divide-y divide-slate-700/30">
+                  {group.subAssignments.map(({ assignment, job, feedback }) => {
+                    const isGenerating = job && (job.status === 'pending' || job.status === 'processing');
+                    const isFailed = job?.status === 'failed';
+                    const hasFeedback = !!feedback;
+                    const emailSent = !!feedback?.sent_at;
+
+                    let displayStatus = assignment.status;
+                    if (isGenerating) displayStatus = 'processing';
+                    if (hasFeedback) displayStatus = 'feedback_ready';
+
+                    return (
+                      <Link
+                        key={assignment.id}
+                        href={hasFeedback ? `/lms/feedbacks/${feedback.id}` : `/lms/assignments/${assignment.id}`}
+                        className="block px-6 py-4 hover:bg-slate-700/20 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              displayStatus === 'feedback_ready' ? 'bg-green-500' :
+                              displayStatus === 'processing' ? 'bg-yellow-500 animate-pulse' :
+                              displayStatus === 'submitted' ? 'bg-blue-500' :
+                              'bg-slate-500'
+                            }`} />
+                            <div className="min-w-0">
+                              <h4 className="text-sm font-medium text-white truncate">
+                                {assignment.course_weeks?.title || '과제'}
+                              </h4>
+                              <div className="flex items-center gap-3 mt-0.5">
+                                <span className="text-xs text-slate-500">v{assignment.version}</span>
+                                {assignment.submitted_at && (
+                                  <span className="text-xs text-slate-500">
+                                    제출: {new Date(assignment.submitted_at).toLocaleDateString('ko-KR')}
+                                  </span>
+                                )}
+                                {emailSent && (
+                                  <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
+                                    발송됨
+                                  </span>
+                                )}
+                                {isFailed && (
+                                  <span className="text-xs text-red-400">생성 실패</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            {feedback?.scores?.total != null && (
+                              <span className={`px-3 py-1 rounded-lg text-sm font-bold ${
+                                feedback.scores.total >= 80 ? 'bg-green-600/20 text-green-400' :
+                                feedback.scores.total >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
+                                'bg-red-600/20 text-red-400'
+                              }`}>
+                                {feedback.scores.total}점
+                              </span>
+                            )}
+                            <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        {/* Processing indicator */}
+                        {isGenerating && (
+                          <div className="mt-3 ml-5 space-y-1">
+                            <div className="flex items-center gap-2 text-xs text-yellow-400">
+                              <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-yellow-400" />
+                              <span>AI가 분석하고 있습니다...</span>
+                            </div>
+                            <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full animate-[progress_3s_ease-in-out_infinite]" style={{ width: '60%' }} />
+                            </div>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>

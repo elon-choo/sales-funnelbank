@@ -34,7 +34,7 @@ interface DashboardData {
   }>;
   recentFeedbacks: Array<{
     id: string;
-    score: number | null;
+    scores: { total: number } | null;
     created_at: string;
     assignments: {
       id: string;
@@ -293,13 +293,13 @@ export default function LmsDashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {feedback.score !== null && (
+                  {feedback.scores?.total != null && (
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      feedback.score >= 80 ? 'bg-green-600/20 text-green-400' :
-                      feedback.score >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
+                      feedback.scores.total >= 80 ? 'bg-green-600/20 text-green-400' :
+                      feedback.scores.total >= 60 ? 'bg-yellow-600/20 text-yellow-400' :
                       'bg-red-600/20 text-red-400'
                     }`}>
-                      {feedback.score}점
+                      {feedback.scores.total}점
                     </span>
                   )}
                   <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
