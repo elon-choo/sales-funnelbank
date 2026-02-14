@@ -1,17 +1,19 @@
 // src/app/api/lms/lessons/route.ts
 // 레슨(주차별 영상) CRUD API - GET: 목록, POST: 생성
+// 핵심: courseId + weekNumber로 "진짜 주차" 단위 매핑 (course_weeks.id가 아님)
 import { NextRequest, NextResponse } from 'next/server';
 import { withLmsAuth, withLmsAdminAuth } from '@/lib/lms/guards';
 
-// GET /api/lms/lessons?weekId=xxx
+// GET /api/lms/lessons?courseId=xxx&weekNumber=1
 export async function GET(request: NextRequest) {
   return withLmsAuth(request, async (auth, supabase) => {
     try {
-      const weekId = request.nextUrl.searchParams.get('weekId');
+      const courseId = request.nextUrl.searchParams.get('courseId');
+      const weekNumber = request.nextUrl.searchParams.get('weekNumber');
 
-      if (!weekId) {
+      if (!courseId || !weekNumber) {
         return NextResponse.json(
-          { success: false, error: { code: 'BAD_REQUEST', message: 'weekId가 필요합니다' } },
+          { success: false, error: { code: 'BAD_REQUEST', message: 'courseId, weekNumber가 필요합니다' } },
           { status: 400 }
         );
       }
@@ -19,7 +21,8 @@ export async function GET(request: NextRequest) {
       let query = supabase
         .from('week_lessons')
         .select('*')
-        .eq('week_id', weekId)
+        .eq('course_id', courseId)
+        .eq('week_number', parseInt(weekNumber))
         .is('deleted_at', null)
         .order('sort_order', { ascending: true });
 
@@ -57,27 +60,12 @@ export async function POST(request: NextRequest) {
   return withLmsAdminAuth(request, async (auth, supabase) => {
     try {
       const body = await request.json();
-      const { weekId, title, description, videoUrl, videoDuration, videoThumbnail, videoVisible } = body;
+      const { courseId, weekNumber, title, description, videoUrl, videoDuration, videoThumbnail, videoVisible } = body;
 
-      if (!weekId || !title) {
+      if (!courseId || !weekNumber || !title) {
         return NextResponse.json(
-          { success: false, error: { code: 'BAD_REQUEST', message: 'weekId, title은 필수입니다' } },
+          { success: false, error: { code: 'BAD_REQUEST', message: 'courseId, weekNumber, title은 필수입니다' } },
           { status: 400 }
-        );
-      }
-
-      // 주차 존재 확인
-      const { data: week } = await supabase
-        .from('course_weeks')
-        .select('id')
-        .eq('id', weekId)
-        .is('deleted_at', null)
-        .single();
-
-      if (!week) {
-        return NextResponse.json(
-          { success: false, error: { code: 'NOT_FOUND', message: '주차를 찾을 수 없습니다' } },
-          { status: 404 }
         );
       }
 
@@ -85,7 +73,8 @@ export async function POST(request: NextRequest) {
       const { data: maxSort } = await supabase
         .from('week_lessons')
         .select('sort_order')
-        .eq('week_id', weekId)
+        .eq('course_id', courseId)
+        .eq('week_number', weekNumber)
         .is('deleted_at', null)
         .order('sort_order', { ascending: false })
         .limit(1)
@@ -96,7 +85,8 @@ export async function POST(request: NextRequest) {
       const { data: lesson, error } = await supabase
         .from('week_lessons')
         .insert({
-          week_id: weekId,
+          course_id: courseId,
+          week_number: weekNumber,
           title,
           description: description || null,
           video_url: videoUrl || null,

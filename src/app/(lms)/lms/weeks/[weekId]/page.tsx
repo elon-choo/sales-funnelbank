@@ -99,8 +99,9 @@ export default function WeekDetailPage({ params }: { params: Promise<{ weekId: s
         if (!weekResult.success) throw new Error(weekResult.error?.message || '오류 발생');
         setWeek(weekResult.data.week);
 
-        // Fetch lessons for this week
-        const lessonsRes = await fetch(`/api/lms/lessons?weekId=${weekId}`, {
+        // Fetch lessons for this week (by courseId + weekNumber)
+        const weekData = weekResult.data.week;
+        const lessonsRes = await fetch(`/api/lms/lessons?courseId=${weekData.course_id}&weekNumber=${weekData.week_number}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (lessonsRes.ok) {

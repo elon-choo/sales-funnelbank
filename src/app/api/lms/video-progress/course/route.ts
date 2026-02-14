@@ -35,30 +35,33 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // 레슨 데이터 가져오기 (코스의 모든 주차의 레슨)
+      // 레슨 데이터 가져오기 (코스의 모든 주차의 레슨, week_number 기반)
+      const { data: allLessons } = await supabase
+        .from('week_lessons')
+        .select('id, week_number')
+        .eq('course_id', courseId)
+        .eq('video_visible', true)
+        .is('deleted_at', null);
+
+      // week_number별로 그룹핑 (course_weeks.id가 아닌 week_number 기준)
+      const lessonsMap: Record<string, Array<{ id: string; week_number: number }>> = {};
+      (allLessons || []).forEach((l: { id: string; week_number: number }) => {
+        const key = String(l.week_number);
+        if (!lessonsMap[key]) lessonsMap[key] = [];
+        lessonsMap[key].push(l);
+      });
+
+      // week_id → week_number 매핑 (course_weeks에서)
       const { data: courseWeeks } = await supabase
         .from('course_weeks')
-        .select('id')
+        .select('id, week_number')
         .eq('course_id', courseId)
         .is('deleted_at', null);
 
-      const weekIds = (courseWeeks || []).map((w: { id: string }) => w.id);
-
-      let lessonsMap: Record<string, Array<{ id: string; week_id: string }>> = {};
-
-      if (weekIds.length > 0) {
-        const { data: lessons } = await supabase
-          .from('week_lessons')
-          .select('id, week_id')
-          .in('week_id', weekIds)
-          .eq('video_visible', true)
-          .is('deleted_at', null);
-
-        (lessons || []).forEach((l: { id: string; week_id: string }) => {
-          if (!lessonsMap[l.week_id]) lessonsMap[l.week_id] = [];
-          lessonsMap[l.week_id].push(l);
-        });
-      }
+      const weekIdToNumber: Record<string, number> = {};
+      (courseWeeks || []).forEach((w: { id: string; week_number: number }) => {
+        weekIdToNumber[w.id] = w.week_number;
+      });
 
       // 기존 주차별 매핑 (lesson_id=null인 레코드)
       const progressByWeek: Record<string, {
@@ -100,8 +103,9 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // 레슨이 있는 주차: 레슨별 진도를 집계하여 주차 진도 계산
-      for (const [weekId, lessons] of Object.entries(lessonsMap)) {
+      // 레슨이 있는 주차: week_number별로 레슨 진도 집계
+      // progressByWeek는 week_id(course_weeks.id) 키이므로, week_number→week_ids 매핑 필요
+      for (const [weekNumStr, lessons] of Object.entries(lessonsMap)) {
         if (lessons.length === 0) continue;
 
         const completedLessons = lessons.filter(l => lessonProgressMap[l.id]?.isCompleted).length;
@@ -109,16 +113,22 @@ export async function GET(request: NextRequest) {
         const avgPercentage = Math.round(totalPercentage / lessons.length);
         const allCompleted = completedLessons === lessons.length;
 
-        progressByWeek[weekId] = {
-          weekId,
-          watchPercentage: avgPercentage,
-          isCompleted: allCompleted,
-          lastPosition: 0,
-          totalSeconds: 0,
-          watchedSeconds: 0,
-          lessonCount: lessons.length,
-          lessonCompleted: completedLessons,
-        };
+        // 해당 week_number에 속하는 모든 course_weeks id에 대해 동일한 레슨 진도 세팅
+        const weekNum = parseInt(weekNumStr);
+        (courseWeeks || [])
+          .filter((w: { id: string; week_number: number }) => w.week_number === weekNum)
+          .forEach((w: { id: string; week_number: number }) => {
+            progressByWeek[w.id] = {
+              weekId: w.id,
+              watchPercentage: avgPercentage,
+              isCompleted: allCompleted,
+              lastPosition: 0,
+              totalSeconds: 0,
+              watchedSeconds: 0,
+              lessonCount: lessons.length,
+              lessonCompleted: completedLessons,
+            };
+          });
       }
 
       // 통계
