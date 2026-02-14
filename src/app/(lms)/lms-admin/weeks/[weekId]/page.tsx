@@ -27,6 +27,10 @@ interface WeekContent {
   is_active: boolean;
   content_json?: Record<string, unknown>;
   video_url?: string;
+  video_title?: string;
+  video_duration?: number | null;
+  video_thumbnail?: string;
+  video_visible?: boolean;
   materials?: string[];
 }
 
@@ -97,6 +101,10 @@ export default function WeekEditorPage({ params }: { params: Promise<{ weekId: s
           isActive: week.is_active,
           contentJson: week.content_json,
           videoUrl: week.video_url,
+          videoTitle: week.video_title,
+          videoDuration: week.video_duration,
+          videoThumbnail: week.video_thumbnail,
+          videoVisible: week.video_visible,
           materials: week.materials,
           fieldConfigs,
         }),
@@ -280,17 +288,30 @@ export default function WeekEditorPage({ params }: { params: Promise<{ weekId: s
 
         {activeTab === 'content' && (
           <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">강의 영상 URL</label>
-              <input
-                type="url"
-                value={week.video_url || ''}
-                onChange={(e) => setWeek({ ...week, video_url: e.target.value })}
-                placeholder="https://youtube.com/watch?v=..."
-                className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
+            {/* Video/Lesson Section - Link to Videos Page */}
+            <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-700/50 space-y-3">
+              <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                강의 영상 (레슨)
+              </h3>
+              <p className="text-sm text-slate-400">
+                이 주차의 레슨(영상)은 영상 관리 페이지에서 관리합니다.<br />
+                주차별로 여러 개의 레슨을 추가하고, 순서/공개 여부를 설정할 수 있습니다.
+              </p>
+              <Link
+                href="/lms-admin/videos"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded-lg text-sm font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                영상 관리 페이지로 이동
+              </Link>
             </div>
 
+            {/* Markdown Content */}
             <div>
               <label className="block text-sm font-medium text-white mb-2">학습 자료 (Markdown)</label>
               <textarea

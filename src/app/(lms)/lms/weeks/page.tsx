@@ -13,11 +13,12 @@ interface WeekProgress {
   deadline: string | null;
   is_active: boolean;
   course_id: string;
+  video_url?: string | null;
+  video_visible?: boolean;
   courses: {
     id: string;
     title: string;
   };
-  // 진도 정보 (assignments와 조인 필요)
   assignment?: {
     id: string;
     status: 'draft' | 'submitted' | 'reviewed';
@@ -26,6 +27,12 @@ interface WeekProgress {
       id: string;
       score: number | null;
     }>;
+  };
+  videoProgress?: {
+    watchPercentage: number;
+    isCompleted: boolean;
+    lessonCount?: number;
+    lessonCompleted?: number;
   };
 }
 
@@ -79,10 +86,32 @@ export default function WeeksProgressPage() {
           });
         }
 
-        // Merge weeks with assignments
+        // Fetch video progress for all weeks (including lesson-based)
+        let videoProgressMap: Record<string, { watchPercentage: number; isCompleted: boolean; lessonCount?: number; lessonCompleted?: number }> = {};
+        if (weeksData.length > 0) {
+          const courseId = weeksData[0].course_id;
+          const vpRes = await fetch(`/api/lms/video-progress/course?courseId=${courseId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (vpRes.ok) {
+            const vpResult = await vpRes.json();
+            const byWeek = vpResult.data?.progressByWeek || {};
+            Object.keys(byWeek).forEach((wid) => {
+              videoProgressMap[wid] = {
+                watchPercentage: byWeek[wid].watchPercentage || 0,
+                isCompleted: byWeek[wid].isCompleted || false,
+                lessonCount: byWeek[wid].lessonCount || 0,
+                lessonCompleted: byWeek[wid].lessonCompleted || 0,
+              };
+            });
+          }
+        }
+
+        // Merge weeks with assignments and video progress
         const mergedWeeks = weeksData.map((week: WeekProgress) => ({
           ...week,
           assignment: assignments[week.id] || null,
+          videoProgress: videoProgressMap[week.id] || null,
         }));
 
         setWeeks(mergedWeeks);
@@ -219,6 +248,51 @@ export default function WeeksProgressPage() {
                     <p className="text-sm text-slate-400 line-clamp-1">{week.description}</p>
                   )}
 
+                  {/* Video Progress Bar - Lesson-based or legacy */}
+                  {(week.videoProgress || (week.video_url && week.video_visible)) && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <svg className="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {week.videoProgress?.lessonCount && week.videoProgress.lessonCount > 0 ? (
+                        <>
+                          <span className="text-xs text-slate-400">
+                            {week.videoProgress.lessonCount}개 레슨
+                          </span>
+                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden max-w-[120px]">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                week.videoProgress?.isCompleted ? 'bg-green-500' : 'bg-purple-500'
+                              }`}
+                              style={{ width: `${week.videoProgress?.watchPercentage || 0}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {week.videoProgress?.isCompleted
+                              ? '시청완료'
+                              : `${week.videoProgress?.lessonCompleted || 0}/${week.videoProgress?.lessonCount} 완료`
+                            }
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden max-w-[120px]">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                week.videoProgress?.isCompleted ? 'bg-green-500' : 'bg-purple-500'
+                              }`}
+                              style={{ width: `${week.videoProgress?.watchPercentage || 0}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {week.videoProgress?.isCompleted ? '시청완료' : `${week.videoProgress?.watchPercentage || 0}%`}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                     <span>유형: {week.assignment_type}</span>
                     {week.deadline && (
@@ -230,23 +304,32 @@ export default function WeeksProgressPage() {
                   </div>
                 </div>
 
-                {/* Action */}
+                {/* Actions */}
                 {!isLocked && (
-                  <Link
-                    href={week.assignment ? `/lms/assignments/${week.assignment.id}` : `/lms/weeks/${week.id}`}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      status === 'reviewed'
-                        ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30'
-                        : status === 'submitted'
-                        ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
-                        : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
-                    }`}
-                  >
-                    {status === 'reviewed' ? '피드백 보기' :
-                     status === 'submitted' ? '진행 상황' :
-                     status === 'draft' ? '이어서 작성' :
-                     '시작하기'}
-                  </Link>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <Link
+                      href={`/lms/weeks/${week.id}`}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 text-center"
+                    >
+                      강의 보기
+                    </Link>
+                    {week.assignment && (
+                      <Link
+                        href={`/lms/assignments/${week.assignment.id}`}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors text-center ${
+                          status === 'reviewed'
+                            ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30'
+                            : status === 'submitted'
+                            ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
+                            : 'bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30'
+                        }`}
+                      >
+                        {status === 'reviewed' ? '피드백 보기' :
+                         status === 'submitted' ? '진행 상황' :
+                         '이어서 작성'}
+                      </Link>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
