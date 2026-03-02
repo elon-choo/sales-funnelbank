@@ -7,15 +7,12 @@ import { createClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyCustomJWT } from '@/lib/auth/tokens';
 import type { AuthResult, UserTier, UserRole } from '@/types/auth';
-
-// 하드코딩된 어드민 ID (login/me route와 동일)
-const HARDCODED_ADMIN_ID = '2413c0d5-726c-4063-8225-68d318c8b447';
+import { hasAdminRole } from '@/lib/auth/permissions';
 
 /**
  * API Route에서 인증 확인
- * - Supabase Auth Token 직접 검증
- * - 하드코딩된 어드민은 DB 조회 스킵
- * - 일반 사용자는 프로필 조회 (승인, 삭제 상태 확인)
+ * - 자체 JWT 검증 → Supabase Auth 폴백
+ * - 모든 사용자 프로필 DB 조회 (승인, 삭제 상태 확인)
  */
 export async function authenticateRequest(
     request: NextRequest
@@ -28,33 +25,10 @@ export async function authenticateRequest(
 
     const token = authHeader.substring(7);
 
-    // 하드코딩 어드민 토큰 체크 (백업용)
-    if (token === 'HARDCODED_ADMIN_TOKEN') {
-        return {
-            userId: HARDCODED_ADMIN_ID,
-            email: 'admin@magneticsales.com',
-            tier: 'ENTERPRISE' as UserTier,
-            role: 'admin' as UserRole,
-            isApproved: true,
-        };
-    }
-
     try {
         // 1. 자체 발급 JWT 검증 시도 (빠름)
         const customPayload = await verifyCustomJWT(token);
         if (customPayload) {
-            // 하드코딩된 어드민 ID인 경우
-            if (customPayload.sub === HARDCODED_ADMIN_ID) {
-                return {
-                    userId: HARDCODED_ADMIN_ID,
-                    email: customPayload.email,
-                    tier: 'ENTERPRISE' as UserTier,
-                    role: 'admin' as UserRole,
-                    isApproved: true,
-                };
-            }
-
-            // 일반 사용자: JWT에서 정보 추출 + DB 검증
             const adminClient = createAdminClient();
             const { data: profile } = await adminClient
                 .from('profiles')
@@ -95,18 +69,6 @@ export async function authenticateRequest(
             return null;
         }
 
-        // 하드코딩된 어드민인 경우 DB 조회 스킵
-        if (user.id === HARDCODED_ADMIN_ID) {
-            return {
-                userId: user.id,
-                email: user.email || '',
-                tier: 'ENTERPRISE' as UserTier,
-                role: 'admin' as UserRole,
-                isApproved: true,
-            };
-        }
-
-        // 일반 사용자: 프로필 조회 (deleted_at, is_approved 확인)
         const adminClient = createAdminClient();
         const { data: profile } = await adminClient
             .from('profiles')
@@ -114,7 +76,6 @@ export async function authenticateRequest(
             .eq('id', user.id)
             .single();
 
-        // 삭제되었거나 미승인 사용자
         if (!profile || profile.deleted_at || !profile.is_approved) {
             return null;
         }
@@ -188,8 +149,8 @@ export function withAdminAuth(
             );
         }
 
-        // Admin 권한 확인
-        if (auth.tier !== 'ENTERPRISE') {
+        // Admin 권한 확인 (중앙화된 permissions.ts 사용)
+        if (!hasAdminRole(auth.role, auth.tier)) {
             return NextResponse.json(
                 {
                     success: false,

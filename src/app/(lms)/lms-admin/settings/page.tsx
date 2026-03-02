@@ -264,6 +264,10 @@ export default function AISettingsPage() {
         'week1_biz': '039aae79-7c19-4cdd-a193-405ad33d95f3',
         'week1_funnel': '4bfae65c-d195-44b3-a5c2-fa9b96987f56',
         'week2': 'b8c4e2a1-3d5f-4a7b-9c1e-2f8d6a4b3c5e',
+        'week3_coi': 'daa187cd-9ca4-40f7-a1b4-2601e04f84ee',
+        'week3_spin': '16357d5e-fe04-43fa-ab09-33ca42ddf195',
+        'week3_script': '7e677ffa-1c92-431a-ac0a-b2eac50c2804',
+        'week4': '7c80ae78-091a-4083-80c3-508f05f3b060',
       };
       const weekId = ragUploadWeek !== 'all' ? weekIdMap[ragUploadWeek] || undefined : undefined;
 
@@ -513,6 +517,10 @@ export default function AISettingsPage() {
                 { key: 'week1_biz', label: '1주차 기획서' },
                 { key: 'week1_funnel', label: '1주차 퍼널' },
                 { key: 'week2', label: '2주차' },
+                { key: 'week3_coi', label: '3주차 COI' },
+                { key: 'week3_spin', label: '3주차 SPIN' },
+                { key: 'week3_script', label: '3주차 스크립트' },
+                { key: 'week4', label: '4주차' },
               ].map(w => (
                 <button
                   key={w.key}

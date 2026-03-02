@@ -9,11 +9,10 @@ import path from 'path';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-const INTERNAL_API_SECRET = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
+import { validateInternalApiSecret } from '@/lib/security/crypto';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const authHeader = request.headers.get('x-internal-secret');
-  if (authHeader !== INTERNAL_API_SECRET) {
+  if (!validateInternalApiSecret(request.headers.get('x-internal-secret'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

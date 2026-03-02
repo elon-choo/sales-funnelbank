@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyAccessToken } from '@/lib/auth/tokens';
 import type { AuthResult, UserTier } from '@/types/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { hasAdminRole } from '@/lib/auth/permissions';
 
 // LMS 역할 타입
 export type LmsRole = 'student' | 'admin';
@@ -86,8 +87,8 @@ async function authenticateLmsRequest(
       return null;
     }
 
-    // lms_role은 role 또는 tier 기반으로 결정 (owner/admin → admin 역할)
-    const lmsRole: LmsRole = (profile.role === 'admin' || profile.role === 'owner' || profile.tier === 'ENTERPRISE') ? 'admin' : 'student';
+    // lms_role은 중앙 permissions 헬퍼 기반으로 결정
+    const lmsRole: LmsRole = hasAdminRole(profile.role || 'user', profile.tier) ? 'admin' : 'student';
 
     return {
       userId: payload.sub,
@@ -162,8 +163,8 @@ export async function withLmsAdminAuth(
     );
   }
 
-  // LMS Admin 권한 확인 (lms_role='admin' 또는 ENTERPRISE 티어)
-  if (auth.lmsRole !== 'admin' && auth.tier !== 'ENTERPRISE') {
+  // LMS Admin 권한 확인 (중앙 permissions 헬퍼 사용)
+  if (!hasAdminRole(auth.role, auth.tier)) {
     return NextResponse.json(
       {
         success: false,
@@ -212,7 +213,7 @@ export async function withEnrollmentAuth(
   const supabase = createAdminClient();
 
   // 관리자는 모든 기수 접근 가능
-  if (auth.lmsRole === 'admin' || auth.tier === 'ENTERPRISE') {
+  if (hasAdminRole(auth.role, auth.tier)) {
     return handler(auth, supabase, {
       courseId,
       enrollmentId: 'admin-access',

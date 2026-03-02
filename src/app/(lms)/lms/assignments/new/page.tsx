@@ -447,6 +447,7 @@ export default function NewAssignmentPage() {
       });
       if (allMissing.length > 0) {
         setError(`다음 항목을 입력해주세요: ${allMissing.join(', ')}`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
     }
@@ -1021,6 +1022,13 @@ export default function NewAssignmentPage() {
                   최대 5개 파일이 첨부되었습니다.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Error near submit button */}
+          {error && (
+            <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-3 mt-2">
+              <p className="text-red-400 text-sm">{error}</p>
             </div>
           )}
 

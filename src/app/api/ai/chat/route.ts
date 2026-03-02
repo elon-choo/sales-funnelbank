@@ -11,9 +11,6 @@ import Anthropic from '@anthropic-ai/sdk';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// 하드코딩된 어드민 ID (guards.ts와 동일)
-const HARDCODED_ADMIN_ID = '2413c0d5-726c-4063-8225-68d318c8b447';
-
 // 히스토리 최대 토큰 (컨텍스트 절반 정도)
 const MAX_HISTORY_TOKENS = 50000;
 
@@ -40,57 +37,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 하드코딩된 어드민인 경우 간단한 스트리밍 응답 (DB 저장/토큰 관리 스킵)
-        const isHardcodedAdmin = auth.userId === HARDCODED_ADMIN_ID;
-
-        if (isHardcodedAdmin) {
-            // 하드코딩 어드민용 간단 스트리밍
-            const stream = new ReadableStream({
-                async start(controller) {
-                    const encoder = new TextEncoder();
-                    let responseText = "";
-
-                    try {
-                        const claudeStream = await callClaudeAPI([
-                            { role: 'user', content: message }
-                        ]);
-
-                        // 임시 세션 ID 전송
-                        controller.enqueue(
-                            encoder.encode(`data: ${JSON.stringify({ sessionId: 'admin-temp-session' })}\n\n`)
-                        );
-
-                        for await (const chunk of claudeStream) {
-                            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-                                const text = chunk.delta.text;
-                                responseText += text;
-                                controller.enqueue(
-                                    encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
-                                );
-                            }
-                        }
-
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
-
-                    } catch (error) {
-                        console.error('Admin streaming error:', error);
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'AI processing failed' })}\n\n`));
-                    } finally {
-                        controller.close();
-                    }
-                },
-            });
-
-            return new Response(stream, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                }
-            });
-        }
-
-        // 일반 사용자 플로우
+        // 사용자 플로우
         const supabase = createAdminClient();
 
         // 3. 세션 처리 (새로 생성 또는 기존 사용)

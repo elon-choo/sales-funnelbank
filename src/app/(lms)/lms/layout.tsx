@@ -24,7 +24,8 @@ export default function LmsLayout({
       setIsLoading(false);
     };
     checkAuth();
-  }, [restoreSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

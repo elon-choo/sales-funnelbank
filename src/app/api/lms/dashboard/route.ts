@@ -151,6 +151,25 @@ async function fetchAdminDashboard(supabase: ReturnType<typeof import('@/lib/sup
     costStats.byModel[model].cost += f.cost_usd || 0;
   });
 
+  // VOD 시청률 요약
+  let videoQuery = supabase
+    .from('video_progress')
+    .select('user_id, watch_percentage, is_completed');
+
+  if (courseId) {
+    videoQuery = videoQuery.eq('course_id', courseId);
+  }
+
+  const { data: videoProgress } = await videoQuery;
+
+  const videoStats = {
+    totalWatchers: new Set(videoProgress?.map(v => v.user_id) || []).size,
+    completedCount: videoProgress?.filter(v => v.is_completed).length || 0,
+    avgPercentage: videoProgress && videoProgress.length > 0
+      ? Math.round(videoProgress.reduce((s, v) => s + (v.watch_percentage || 0), 0) / videoProgress.length)
+      : 0,
+  };
+
   return {
     type: 'admin',
     courses,
@@ -158,6 +177,7 @@ async function fetchAdminDashboard(supabase: ReturnType<typeof import('@/lib/sup
     assignmentStats,
     jobStats,
     costStats,
+    videoStats,
     generatedAt: new Date().toISOString(),
   };
 }

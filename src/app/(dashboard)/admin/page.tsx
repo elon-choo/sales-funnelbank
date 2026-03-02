@@ -63,7 +63,7 @@ export default function AdminPage() {
 
     useEffect(() => {
         if (authLoading) return;
-        if (user && user.role !== 'admin') {
+        if (user && user.role !== 'admin' && user.role !== 'owner') {
             router.push('/dashboard');
             return;
         }
@@ -150,7 +150,7 @@ export default function AdminPage() {
         );
     }
 
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role !== 'admin' && user.role !== 'owner') {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
                 <div className="text-center">

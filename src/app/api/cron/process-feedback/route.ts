@@ -8,14 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { timingSafeCompare } from '@/lib/security/crypto';
 
 // Vercel Cron config (vercel.json에도 설정 필요)
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MAX_CONCURRENT_JOBS = 10;
-const CRON_SECRET = process.env.CRON_SECRET_FEEDBACK || '';
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || CRON_SECRET;
 
 // 프리미엄 사용자 여부 확인 (시스템 설정 또는 프로필 티어 기반)
 async function checkPremiumStatus(
@@ -75,10 +74,11 @@ export async function GET(request: NextRequest) {
   // Cron 인증 확인
   const authHeader = request.headers.get('authorization');
   const cronSecret = request.headers.get('x-cron-secret');
-  const isDev = process.env.NODE_ENV === 'development';
-  const isValidCron = cronSecret === CRON_SECRET || authHeader === `Bearer ${CRON_SECRET}`;
+  const cronSecret_env = (process.env.CRON_SECRET_FEEDBACK || '').trim();
+  const isValidCron = (cronSecret_env && cronSecret ? timingSafeCompare(cronSecret, cronSecret_env) : false) ||
+                      (cronSecret_env && authHeader ? timingSafeCompare(authHeader, `Bearer ${cronSecret_env}`) : false);
 
-  if (!isDev && !isValidCron) {
+  if (!isValidCron) {
     console.warn('[Cron Auth] Invalid cron secret');
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'x-internal-secret': INTERNAL_API_SECRET,
+                'x-internal-secret': process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '',
               },
               body: JSON.stringify({
                 jobId: job.id,

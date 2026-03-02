@@ -1,5 +1,5 @@
 // src/app/(lms)/lms-admin/rag/page.tsx
-// RAG 관리 → 설정 페이지의 RAG 탭으로 통합 리다이렉트
+// RAG 데이터 관리 페이지 - 실시간 DB 통계
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -24,7 +24,7 @@ interface WeekMapping {
   datasetCount: number;
 }
 
-interface PgvectorEntry {
+interface PgvectorCategory {
   category: string;
   type: string;
   count: number;
@@ -34,29 +34,30 @@ export default function RagAdminPage() {
   const { accessToken } = useAuthStore();
   const [datasets, setDatasets] = useState<RagDataset[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pgvectorStats, setPgvectorStats] = useState<PgvectorEntry[]>([]);
+  const [pgvectorStats, setPgvectorStats] = useState<PgvectorCategory[]>([]);
   const [weekMappings, setWeekMappings] = useState<WeekMapping[]>([]);
+  const [totalEntries, setTotalEntries] = useState(0);
+  const [totalCategories, setTotalCategories] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
     try {
-      // Fetch rag_datasets
-      const res = await fetch('/api/lms/rag', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const data = await res.json();
-      if (data.success) setDatasets(data.data.datasets || []);
+      const [ragRes, statsRes] = await Promise.all([
+        fetch('/api/lms/rag', { headers: { Authorization: `Bearer ${accessToken}` } }),
+        fetch('/api/lms/admin/rag-stats', { headers: { Authorization: `Bearer ${accessToken}` } }),
+      ]);
 
-      // Fetch pgvector stats via admin dashboard
-      const dashRes = await fetch('/api/lms/admin/rag-stats', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (dashRes.ok) {
-        const dashData = await dashRes.json();
-        if (dashData.success) {
-          setPgvectorStats(dashData.data.pgvectorCategories || []);
-          setWeekMappings(dashData.data.weekMappings || []);
+      const ragData = await ragRes.json();
+      if (ragData.success) setDatasets(ragData.data.datasets || []);
+
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          setPgvectorStats(statsData.data.pgvectorCategories || []);
+          setWeekMappings(statsData.data.weekMappings || []);
+          setTotalEntries(statsData.data.totalEntries || 0);
+          setTotalCategories(statsData.data.totalCategories || 0);
         }
       }
     } catch { /* ignore */ } finally {
@@ -87,36 +88,56 @@ export default function RagAdminPage() {
           href="/lms-admin/settings"
           className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm transition-colors"
         >
-          설정에서 업로드 →
+          데이터 업로드 →
         </Link>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-          <span className="text-xs text-slate-500 uppercase">청크 기반 (W1)</span>
+          <span className="text-xs text-slate-500 uppercase">청크 기반 (rag_chunks)</span>
           <p className="text-2xl font-bold text-white mt-1">{datasets.length}개 데이터셋</p>
           <p className="text-xs text-slate-500 mt-1">
             총 {datasets.reduce((s, d) => s + d.chunk_count, 0)} chunks
           </p>
         </div>
         <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-          <span className="text-xs text-slate-500 uppercase">벡터 기반 (W2+)</span>
-          <p className="text-2xl font-bold text-white mt-1">
-            {pgvectorStats.reduce((s, p) => s + p.count, 0) || 244}개 임베딩
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {pgvectorStats.length || '144'}개 카테고리
-          </p>
+          <span className="text-xs text-slate-500 uppercase">벡터 기반 (pgvector)</span>
+          <p className="text-2xl font-bold text-white mt-1">{totalEntries}개 임베딩</p>
+          <p className="text-xs text-slate-500 mt-1">{totalCategories}개 카테고리</p>
         </div>
         <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
           <span className="text-xs text-slate-500 uppercase">주차 매핑</span>
-          <p className="text-2xl font-bold text-white mt-1">3개 주차</p>
-          <p className="text-xs text-slate-500 mt-1">W1(기획서), W1(퍼널), W2 각 10개</p>
+          <p className="text-2xl font-bold text-white mt-1">{weekMappings.length}개 주차</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {weekMappings.map(w => `W${w.weekNumber}(${w.datasetCount})`).join(', ') || '-'}
+          </p>
         </div>
       </div>
 
-      {/* Dataset List - rag_chunks based */}
+      {/* Week Mappings */}
+      {weekMappings.length > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-700">
+            <h3 className="text-white font-medium">주차별 RAG 매핑</h3>
+          </div>
+          <div className="divide-y divide-slate-700/30">
+            {weekMappings.map(w => (
+              <div key={w.weekId} className="px-4 py-3 flex items-center justify-between">
+                <div>
+                  <span className="text-sm text-white font-medium">{w.weekNumber}주차</span>
+                  <span className="text-xs text-slate-500 ml-2">{w.weekTitle}</span>
+                </div>
+                <span className="text-xs bg-amber-600/20 text-amber-400 px-2 py-1 rounded">
+                  {w.datasetCount}개 데이터셋 매핑
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dataset List */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-700">
           <h3 className="text-white font-medium">청크 기반 데이터셋 (rag_chunks)</h3>
@@ -140,17 +161,33 @@ export default function RagAdminPage() {
         </div>
       </div>
 
-      {/* pgvector info */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
-        <h3 className="text-white font-medium mb-2">시맨틱 검색 데이터 (pgvector)</h3>
-        <p className="text-sm text-slate-400 mb-3">
-          W2+ 피드백 시 학생 과제 내용을 기반으로 시맨틱 검색하여 관련 top 20개 자동 매칭
-        </p>
-        <div className="text-xs text-slate-500 space-y-1">
-          <p>테이블: <code className="text-amber-400">seperma_5th_feedback_rag</code> (244 entries)</p>
-          <p>임베딩: OpenAI <code className="text-amber-400">text-embedding-3-small</code> (1536차원)</p>
-          <p>검색: <code className="text-amber-400">search_seperma_feedback</code> RPC (유사도 0.7+, top 5 per query)</p>
-          <p>카테고리: 고객가치, 페르소나캔버스, 퍼널심리학, 비즈니스모델, 피드백예시 등 144종</p>
+      {/* pgvector Categories */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-700">
+          <h3 className="text-white font-medium">시맨틱 검색 데이터 (pgvector)</h3>
+          <p className="text-xs text-slate-500 mt-1">W2+ 피드백 시 학생 과제 → 시맨틱 검색 → 관련 top 20 자동 매칭</p>
+        </div>
+        <div className="p-4">
+          <div className="text-xs text-slate-500 space-y-1 mb-4">
+            <p>테이블: <code className="text-amber-400">seperma_5th_feedback_rag</code> ({totalEntries} entries)</p>
+            <p>임베딩: OpenAI <code className="text-amber-400">text-embedding-3-small</code> (1536차원)</p>
+            <p>검색: <code className="text-amber-400">search_seperma_feedback</code> RPC (유사도 0.7+)</p>
+          </div>
+          {pgvectorStats.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {pgvectorStats.slice(0, 20).map((cat, i) => (
+                <div key={i} className="bg-slate-900/50 rounded-lg px-3 py-2">
+                  <p className="text-xs text-white truncate">{cat.category}</p>
+                  <p className="text-[10px] text-slate-500">{cat.count}건 · {cat.type}</p>
+                </div>
+              ))}
+              {pgvectorStats.length > 20 && (
+                <div className="bg-slate-900/50 rounded-lg px-3 py-2 flex items-center justify-center">
+                  <p className="text-xs text-slate-500">+{pgvectorStats.length - 20}개 더</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

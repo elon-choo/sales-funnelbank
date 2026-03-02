@@ -8,19 +8,6 @@ import { rotateRefreshToken } from '@/lib/auth/rotation';
 import { COOKIE_CONFIG, TOKEN_EXPIRY } from '@/lib/supabase/config';
 import { UserTier } from '@/types/auth';
 
-// 하드코딩된 어드민 계정 (login route와 동일)
-const HARDCODED_ADMIN = {
-    email: 'admin@magneticsales.com',
-    id: '2413c0d5-726c-4063-8225-68d318c8b447',
-    fullName: 'Admin',
-    tier: 'ENTERPRISE' as UserTier,
-    role: 'owner' as const,
-    isApproved: true,
-    createdAt: new Date().toISOString()
-};
-
-const HARDCODED_ADMIN_TOKEN_PREFIX = 'admin_refresh_';
-
 /**
  * 세션 복구/정보 조회용 API
  * - 쿠키의 Refresh Token을 사용하여 새로운 Access Token과 유저 정보를 반환
@@ -37,33 +24,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 하드코딩된 어드민 토큰 체크
-        if (refreshToken.startsWith(HARDCODED_ADMIN_TOKEN_PREFIX)) {
-            const newAccessToken = await generateAccessToken({
-                userId: HARDCODED_ADMIN.id,
-                email: HARDCODED_ADMIN.email,
-                tier: HARDCODED_ADMIN.tier,
-                role: HARDCODED_ADMIN.role
-            });
-
-            return NextResponse.json({
-                success: true,
-                data: {
-                    accessToken: newAccessToken,
-                    user: {
-                        id: HARDCODED_ADMIN.id,
-                        email: HARDCODED_ADMIN.email,
-                        fullName: HARDCODED_ADMIN.fullName,
-                        tier: HARDCODED_ADMIN.tier,
-                        role: HARDCODED_ADMIN.role,
-                        isApproved: HARDCODED_ADMIN.isApproved,
-                        createdAt: HARDCODED_ADMIN.createdAt
-                    }
-                }
-            });
-        }
-
-        // 일반 사용자: Refresh Token 검증 및 Rotation
+        // Refresh Token 검증 및 Rotation
         const result = await rotateRefreshToken(refreshToken);
 
         if (!result.success || !result.userId) {

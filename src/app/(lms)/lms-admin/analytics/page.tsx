@@ -47,6 +47,12 @@ interface AnalyticsData {
     feedbackCount: number;
     avgCostPerFeedback: number;
   };
+  videoStats: {
+    totalWatchers: number;
+    completedCount: number;
+    avgPercentage: number;
+    byWeek: Record<string, { watchers: number; completed: number; avgPct: number }>;
+  };
   topPerformers: Array<{
     userId: string;
     avgScore: number;
@@ -210,6 +216,52 @@ export default function AnalyticsDashboardPage() {
             </div>
           </div>
 
+          {/* VOD 시청 현황 */}
+          {data.videoStats && (
+            <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
+              <h2 className="text-lg font-semibold text-white mb-4">VOD 시청 현황</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="p-4 bg-slate-900/50 rounded-xl text-center">
+                  <p className="text-2xl font-bold text-white">{data.videoStats.totalWatchers}</p>
+                  <p className="text-sm text-slate-400">시청 수강생</p>
+                </div>
+                <div className="p-4 bg-slate-900/50 rounded-xl text-center">
+                  <p className="text-2xl font-bold text-white">{data.videoStats.avgPercentage}%</p>
+                  <p className="text-sm text-slate-400">평균 시청률</p>
+                </div>
+                <div className="p-4 bg-slate-900/50 rounded-xl text-center">
+                  <p className="text-2xl font-bold text-white">{data.videoStats.completedCount}</p>
+                  <p className="text-sm text-slate-400">완료 건수</p>
+                </div>
+              </div>
+              {Object.keys(data.videoStats.byWeek).length > 0 && (
+                <div className="border-t border-slate-700 pt-4">
+                  <p className="text-sm text-slate-400 mb-3">주차별 시청 현황</p>
+                  <div className="space-y-2">
+                    {Object.entries(data.videoStats.byWeek).map(([weekId, stats], idx) => (
+                      <div key={weekId} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-300">{idx + 1}주차</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-slate-400">{stats.watchers}명 시청</span>
+                          <span className="text-slate-400">{stats.completed}건 완료</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${stats.avgPct >= 80 ? 'bg-green-500' : stats.avgPct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                style={{ width: `${stats.avgPct}%` }}
+                              />
+                            </div>
+                            <span className="text-white w-10 text-right">{stats.avgPct}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Weekly Stats */}
           <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
             <h2 className="text-lg font-semibold text-white mb-4">주차별 현황</h2>
@@ -221,32 +273,51 @@ export default function AnalyticsDashboardPage() {
                       <th className="text-left text-slate-400 font-medium py-3 px-4">주차</th>
                       <th className="text-right text-slate-400 font-medium py-3 px-4">제출 수</th>
                       <th className="text-right text-slate-400 font-medium py-3 px-4">평균 점수</th>
+                      <th className="text-right text-slate-400 font-medium py-3 px-4">시청률</th>
                       <th className="text-right text-slate-400 font-medium py-3 px-4">완료율</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.weeklyStats.map((week, index) => (
-                      <tr key={week.weekId} className="border-b border-slate-700/50">
-                        <td className="py-3 px-4 text-white">{index + 1}주차</td>
-                        <td className="py-3 px-4 text-right text-white">{week.submissions}개</td>
-                        <td className="py-3 px-4 text-right">
-                          <span className={week.avgScore && week.avgScore >= 80 ? 'text-green-400' : week.avgScore && week.avgScore >= 70 ? 'text-yellow-400' : 'text-slate-400'}>
-                            {week.avgScore?.toFixed(1) || '-'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-amber-500 rounded-full"
-                                style={{ width: `${week.completionRate}%` }}
-                              />
+                    {data.weeklyStats.map((week, index) => {
+                      const weekVideo = data.videoStats?.byWeek?.[week.weekId];
+                      return (
+                        <tr key={week.weekId} className="border-b border-slate-700/50">
+                          <td className="py-3 px-4 text-white">{index + 1}주차</td>
+                          <td className="py-3 px-4 text-right text-white">{week.submissions}개</td>
+                          <td className="py-3 px-4 text-right">
+                            <span className={week.avgScore && week.avgScore >= 80 ? 'text-green-400' : week.avgScore && week.avgScore >= 70 ? 'text-yellow-400' : 'text-slate-400'}>
+                              {week.avgScore?.toFixed(1) || '-'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {weekVideo ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <div className="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${weekVideo.avgPct >= 80 ? 'bg-green-500' : weekVideo.avgPct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                    style={{ width: `${weekVideo.avgPct}%` }}
+                                  />
+                                </div>
+                                <span className="text-slate-400 w-10">{weekVideo.avgPct}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500">-</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full"
+                                  style={{ width: `${week.completionRate}%` }}
+                                />
+                              </div>
+                              <span className="text-slate-400 w-12">{week.completionRate}%</span>
                             </div>
-                            <span className="text-slate-400 w-12">{week.completionRate}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

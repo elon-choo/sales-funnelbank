@@ -15,19 +15,18 @@ import { registerFontsAsync } from '@/lib/pdf/register-fonts';
 export const runtime = 'nodejs';
 export const maxDuration = 800; // Vercel Pro: 최대 800초
 
+import { validateInternalApiSecret } from '@/lib/security/crypto';
+
 const MAX_CONCURRENT_JOBS = 5;
-const CRON_SECRET = (process.env.CRON_SECRET_FEEDBACK || '').trim();
-const INTERNAL_API_SECRET = (process.env.INTERNAL_API_SECRET || CRON_SECRET).trim();
 
 // POST /api/lms/feedback-processor
 export async function POST(request: NextRequest) {
-  // Auth: internal secret OR user JWT
+  // Auth: internal secret OR user JWT (no dev bypass)
   const internalSecretHeader = request.headers.get('x-internal-secret');
-  const isInternalCall = internalSecretHeader === INTERNAL_API_SECRET;
-  const isDev = process.env.NODE_ENV === 'development';
+  const isInternalCall = validateInternalApiSecret(internalSecretHeader);
   let authUserId: string | null = null;
 
-  if (!isDev && !isInternalCall) {
+  if (!isInternalCall) {
     // JWT 인증 시도
     const bearerHeader = request.headers.get('authorization');
     if (bearerHeader?.startsWith('Bearer ')) {
@@ -355,6 +354,63 @@ async function processFeedback(
             console.error(`[Processor] DOC extract error (${file.file_name}):`, dlError);
             textParts.push(`--- 파일: ${file.file_name} (.doc 형식 - 텍스트 추출 실패) ---`);
           }
+        } else if (ext === 'pdf' || mime === 'application/pdf') {
+          // PDF: Gemini API로 텍스트 추출 (이미지/스캔 PDF 포함)
+          try {
+            const { data: fileData, error: downloadError } = await supabase.storage
+              .from('assignment-files')
+              .download(file.file_path);
+
+            if (!downloadError && fileData) {
+              const arrayBuffer = await fileData.arrayBuffer();
+              const base64Data = Buffer.from(arrayBuffer).toString('base64');
+              const geminiKey = process.env.GEMINI_API_KEY;
+
+              if (geminiKey) {
+                const geminiResp = await fetch(
+                  `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      contents: [{
+                        parts: [
+                          { text: 'This PDF is a student assignment submission in Korean. Extract ALL text content from every page of this PDF, preserving the structure (headings, paragraphs, lists, tables). Output the full extracted text in Korean. Do not summarize or omit anything.' },
+                          { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+                        ],
+                      }],
+                      generationConfig: { maxOutputTokens: 32000, temperature: 0.1 },
+                    }),
+                  }
+                );
+
+                if (geminiResp.ok) {
+                  const geminiData = await geminiResp.json();
+                  const extractedText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                  if (extractedText.trim().length > 50) {
+                    textParts.push(`--- 파일: ${file.file_name} (PDF, Gemini 추출) ---\n${extractedText}`);
+                    await supabase
+                      .from('assignment_files')
+                      .update({ extracted_text: extractedText.substring(0, 100000) })
+                      .eq('id', file.id);
+                    console.log(`[Processor] PDF ${file.file_name}: Gemini extracted ${extractedText.length} chars`);
+                  } else {
+                    textParts.push(`--- 파일: ${file.file_name} (PDF, Gemini 추출 실패 - 내용 없음) ---`);
+                    console.warn(`[Processor] PDF ${file.file_name}: Gemini returned too short text`);
+                  }
+                } else {
+                  const errText = await geminiResp.text().catch(() => 'unknown');
+                  console.error(`[Processor] Gemini API error for ${file.file_name}: ${geminiResp.status} ${errText}`);
+                  textParts.push(`--- 파일: ${file.file_name} (PDF, Gemini API 오류) ---`);
+                }
+              } else {
+                textParts.push(`--- 파일: ${file.file_name} (PDF - GEMINI_API_KEY 미설정) ---`);
+              }
+            }
+          } catch (pdfError) {
+            console.error(`[Processor] PDF extract error (${file.file_name}):`, pdfError);
+            textParts.push(`--- 파일: ${file.file_name} (PDF 텍스트 추출 실패) ---`);
+          }
         } else {
           textParts.push(`--- 파일: ${file.file_name} (${mime}, ${Math.round((file.file_size || 0) / 1024)}KB) - 텍스트 추출 불가 ---`);
         }
@@ -475,7 +531,27 @@ async function processFeedback(
       assignment2_persona_canvas: '과제 2: 타겟 페르소나 캔버스',
       assignment3_goal_setting: '과제 3: 목표 설정',
     };
-    const fieldLabels = weekNumber >= 2 ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2 } : fieldLabelsWeek1;
+    const fieldLabelsWeek4: Record<string, string> = {
+      basic_info: 'A-1. 기본 정보',
+      page_purpose: 'A-2. 페이지 목적',
+      customer_current: 'A-3. 고객 현재 상태',
+      customer_future: 'A-4. 고객 이상적 미래',
+      solution_intro: 'A-5. 솔루션 소개',
+      headline: 'B-1. 헤드라인',
+      subhead: 'B-2. 서브헤드',
+      pain_section: 'B-3. 고통 섹션',
+      transition_cta: 'B-4. 전환 CTA',
+      solution_before_after: 'B-5. 솔루션 Before/After',
+      value_stack: 'B-6. 가치 스택 + 가격표',
+      faq: 'B-7. FAQ 선거절 처리',
+      final_cta: 'B-8. 최종 CTA',
+      social_proof: 'B-9. 사회적 증거/성공사례',
+    };
+    const fieldLabels = weekNumber >= 4
+      ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2, ...fieldLabelsWeek4 }
+      : weekNumber >= 2
+        ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2 }
+        : fieldLabelsWeek1;
 
     const excludeKeys = ['_submitMode', '_placeholder', 'submitMode', 'attachedFiles'];
     studentSubmission = Object.entries(content)
@@ -484,9 +560,118 @@ async function processFeedback(
       .join('\n\n');
   }
 
+  // 5-2. 텍스트 추출 실패 검증: 의미있는 내용이 없으면 assignment를 draft로 복원 (횟수 차감 방지)
+  const meaningfulContent = studentSubmission.replace(/---\s*파일:.*?---/g, '').replace(/텍스트 추출 (?:불가|실패|제한)/g, '').trim();
+  if (meaningfulContent.length < 50) {
+    console.warn(`[Processor] Extraction failed: only ${meaningfulContent.length} chars of meaningful content. Reverting assignment to draft.`);
+
+    // Assignment를 draft로 복원 → 제출 횟수에서 제외됨
+    await supabase.from('assignments').update({
+      status: 'draft',
+      submitted_at: null,
+    }).eq('id', assignment.id);
+
+    // Job을 failed로 마크
+    await supabase.from('feedback_jobs').update({
+      status: 'failed',
+      error_message: '파일에서 텍스트를 추출할 수 없습니다. 다른 형식으로 다시 제출해주세요. (제출 횟수는 차감되지 않았습니다)',
+      completed_at: new Date().toISOString(),
+    }).eq('id', targetJobId);
+
+    // 이메일 알림 (실패 안내)
+    try {
+      const smtpHost = process.env.SMTP_HOST?.trim();
+      const smtpUser = process.env.SMTP_USER?.trim();
+      const smtpPass = process.env.SMTP_PASSWORD?.trim();
+      if (smtpHost && smtpUser && smtpPass) {
+        const { data: profile } = await supabase.from('profiles').select('email, full_name').eq('id', assignment.user_id).single();
+        if (profile?.email) {
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: parseInt((process.env.SMTP_PORT || '587').trim()),
+            secure: false,
+            auth: { user: smtpUser, pass: smtpPass },
+          });
+          await transporter.sendMail({
+            from: `"마그네틱 세일즈" <${process.env.SMTP_FROM?.trim() || smtpUser}>`,
+            to: profile.email,
+            subject: '[안내] 과제 파일 텍스트 인식 실패 - 다시 제출해주세요',
+            html: `
+              <div style="font-family: 'Pretendard', sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #1a1a2e; color: #e0e0e0; border-radius: 16px;">
+                <h2 style="color: #f87171;">파일 텍스트 인식 실패 안내</h2>
+                <p>안녕하세요 ${profile.full_name || '수강생'}님,</p>
+                <p>제출하신 파일에서 텍스트를 추출할 수 없어 피드백 생성에 실패했습니다.</p>
+                <div style="background: #2a2a4a; padding: 16px; border-radius: 12px; margin: 16px 0;">
+                  <p style="color: #facc15; font-weight: bold;">제출 횟수는 차감되지 않았습니다.</p>
+                  <p style="color: #b0b0b0;">아래 방법 중 하나로 다시 제출해주세요:</p>
+                  <ul style="color: #b0b0b0;">
+                    <li><b>직접 작성</b>으로 텍스트를 붙여넣기</li>
+                    <li><b>.docx</b> 파일로 변환하여 제출</li>
+                    <li><b>.txt</b> 파일로 변환하여 제출</li>
+                    <li>PDF라면 텍스트가 포함된(스캔이 아닌) PDF로 제출</li>
+                  </ul>
+                </div>
+              </div>`,
+          });
+          console.log(`[Processor] Extraction failure email sent to ${profile.email}`);
+        }
+      }
+    } catch (emailErr) {
+      console.error('[Processor] Extraction failure email error:', emailErr);
+    }
+
+    return; // 피드백 생성 중단
+  }
+
   // 6. Claude API 호출 (주차별 피드백 형식)
   let feedbackFormat: string;
-  if (weekNumber >= 2) {
+  if (weekNumber >= 4) {
+    feedbackFormat = `## 피드백 형식
+피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 빠짐없이 작성하세요. 30,000자 이상 상세하게 작성하세요.
+
+# 세퍼마 5기 4회차 과제 피드백
+
+## 수강생: [이름]
+## 종합 점수: [X]/100
+
+### 핵심 진단 (한 문장 직설적으로)
+### 파트별 점수 테이블 (Part1~5)
+### 강점 (Top 3)
+### 개선 필요 (Top 3)
+### 즉시 실행 액션 (D+3 이내)
+
+## Part 1: 헤드라인+서브헤드 심층 분석
+### 1-1. 3초 법칙 + 후킹 공식 검증 (수강생 원문 인용, 후킹 공식 적용 여부)
+### 1-2. 역설계 6단계 반영 검증 (상품→니즈→잠재문제→관심사→해결질문→후킹 역순 추적)
+### 1-3. 서브헤드 보완력 검증
+
+## Part 2: 고통섹션 심층 분석
+### 2-1. 감정 COI Level 판정 (Level 1~5)
+### 2-2. 숫자 COI 활용 분석 (직접손실/기회비용/미래비용)
+### 2-3. V자 곡선 밸리 깊이 분석
+### 2-4. 가짜 해결책 구조 분석
+
+## Part 3: 전환 CTA + 솔루션 Before/After 심층 분석
+### 3-1. 전환 CTA 분석 (짧고 강렬한가, 배치 타이밍)
+### 3-2. Before/After 분석 (도파민 화법 3요소, 낙차)
+### 3-3. 성공 사례/사회적 증거 분석
+### 3-4. "교육이 곧 세일즈" 원칙 검증
+
+## Part 4: 가치스택+가격표+FAQ 심층 분석
+### 4-1. 마그네틱 4단계 온라인 변환 검증 (가치누적/앵커링/가격제시/ROI)
+### 4-2. 구매 의사결정 저울 검증 (니즈+가치 vs 가격+장벽)
+### 4-3. FAQ 선거절처리 분석 (4대 거절 FAQ 변환)
+### 4-4. 최종 CTA 분석 (명확성/긴급성/감정피크/택일형)
+
+## Part 5: 종합 로드맵 + 마무리
+- 핵심 레버리지 포인트
+- 수강생 유형 판정 (초보/중급)
+- 스크립트→페이지 매핑 일치도 총평
+- 미끄럼틀 배치 + 이탈방지 테크닉 총평
+- D+7 액션 플랜 (오늘/내일/D+3/D+5/D+7)
+- 엘런의 마무리 한마디
+- 핵심 금언 3개`;
+  } else if (weekNumber >= 2) {
     feedbackFormat = `## 피드백 형식
 피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 빠짐없이 작성하세요. 30,000자 이상 상세하게 작성하세요.
 
@@ -551,6 +736,12 @@ ${ragContext ? ragContext.substring(0, 80000) : '(참고 자료 없음)'}
 
 위 참고 자료를 바탕으로 아래 학생의 과제를 분석하고 상세한 피드백을 제공하세요.
 
+중요 규칙:
+- 반드시 마크다운 형식의 피드백 텍스트만 출력하세요.
+- tool_call, bash 코드, 파일 읽기 명령어, XML 태그 등을 절대 출력하지 마세요.
+- "I'll start by reading..." 같은 행동 설명을 하지 말고, 바로 피드백 본문을 작성하세요.
+- 첫 줄은 반드시 "#" 마크다운 제목으로 시작하세요.
+
 ${feedbackFormat}`;
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -573,12 +764,44 @@ ${feedbackFormat}`;
 
   const response = await stream.finalMessage();
 
-  const feedbackText = response.content
+  let feedbackText = response.content
     .filter(block => block.type === 'text')
     .map(block => (block as { type: 'text'; text: string }).text)
     .join('');
 
   const generationTimeMs = Date.now() - feedbackStartTime;
+
+  // 5-1. 피드백 품질 검증 (tool_call/코드 오염 방지)
+  const corruptionMarkers = ['<tool_call>', '</tool_call>', '<tool_result>', '<name>Bash</name>', 'dns.setDefaultResultOrder', '<bash>'];
+  const hasCorruption = corruptionMarkers.some(m => feedbackText.includes(m));
+  if (hasCorruption) {
+    console.error('[Processor] CORRUPTED: output contains tool_call artifacts, cleaning...');
+    // Extract real feedback starting from first markdown heading
+    const headingMatch = feedbackText.match(/\n(#{1,2}\s+(?:세퍼마|🎯|수강생|피드백|종합|Part|핵심).*)/m);
+    if (headingMatch && headingMatch.index !== undefined) {
+      feedbackText = feedbackText.substring(headingMatch.index).trim();
+      console.warn('[Processor] Extracted clean section: ' + feedbackText.length + ' chars');
+    } else {
+      // Strip all tool artifacts
+      feedbackText = feedbackText
+        .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+        .replace(/<tool_result>[\s\S]*?<\/tool_result>/g, '')
+        .replace(/<bash>[\s\S]*?<\/bash>/g, '')
+        .replace(/<arguments>[\s\S]*?<\/arguments>/g, '')
+        .replace(/I'll start by reading[\s\S]*?(?=\n#|\n\n#)/g, '')
+        .replace(/Let me (?:first|start|check)[\s\S]*?(?=\n#|\n\n#)/g, '')
+        .trim();
+      console.warn('[Processor] Stripped artifacts: ' + feedbackText.length + ' chars');
+    }
+    if (feedbackText.length < 1000 || corruptionMarkers.some(m => feedbackText.includes(m))) {
+      console.error('[Processor] Still corrupted after cleanup. Marking job as failed.');
+      await supabase.from('feedback_jobs').update({
+        status: 'failed', error_message: 'AI output corrupted (tool_call artifacts). Auto-retry needed.',
+        completed_at: new Date().toISOString(),
+      }).eq('id', targetJobId);
+      return;
+    }
+  }
 
   // 6. 점수 추출 (다양한 포맷 지원)
   const scoreMatch = feedbackText.match(/(?:총점|종합\s*점수)[:\s]*(\d+)\s*[/\/]\s*100/);
@@ -900,11 +1123,19 @@ async function loadRagViaSemanticSearch(
 // GET: 대기열 상태 조회
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('x-internal-secret');
-  const isInternalCall = authHeader === INTERNAL_API_SECRET;
-  const isDev = process.env.NODE_ENV === 'development';
-
-  if (!isDev && !isInternalCall) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!validateInternalApiSecret(authHeader)) {
+    // JWT 인증 폴백
+    const bearerHeader = request.headers.get('authorization');
+    let authed = false;
+    if (bearerHeader?.startsWith('Bearer ')) {
+      try {
+        const payload = await verifyAccessToken(bearerHeader.substring(7));
+        if (payload?.sub) authed = true;
+      } catch { /* JWT 실패 */ }
+    }
+    if (!authed) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   try {

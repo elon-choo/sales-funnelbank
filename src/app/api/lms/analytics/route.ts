@@ -201,6 +201,34 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => b.avgScore - a.avgScore)
         .slice(0, 10);
 
+      // 8. 영상 시청 분석
+      const { data: videoProgress } = await supabase
+        .from('video_progress')
+        .select('user_id, week_id, watch_percentage, is_completed');
+
+      const videoStats = {
+        totalWatchers: new Set(videoProgress?.map(v => v.user_id) || []).size,
+        completedCount: videoProgress?.filter(v => v.is_completed).length || 0,
+        avgPercentage: videoProgress && videoProgress.length > 0
+          ? Math.round(videoProgress.reduce((s, v) => s + (v.watch_percentage || 0), 0) / videoProgress.length)
+          : 0,
+        byWeek: {} as Record<string, { watchers: number; completed: number; avgPct: number }>,
+      };
+
+      // Group video progress by week_id
+      const vpByWeek = new Map<string, Array<{ pct: number; done: boolean }>>();
+      videoProgress?.forEach(v => {
+        if (!vpByWeek.has(v.week_id)) vpByWeek.set(v.week_id, []);
+        vpByWeek.get(v.week_id)!.push({ pct: v.watch_percentage || 0, done: v.is_completed || false });
+      });
+      vpByWeek.forEach((entries, weekId) => {
+        videoStats.byWeek[weekId] = {
+          watchers: entries.length,
+          completed: entries.filter(e => e.done).length,
+          avgPct: Math.round(entries.reduce((s, e) => s + e.pct, 0) / entries.length),
+        };
+      });
+
       return NextResponse.json({
         success: true,
         data: {
@@ -218,6 +246,7 @@ export async function GET(request: NextRequest) {
               ? Math.round((activeUserIds.size / enrollmentStats.active) * 100)
               : 0,
           },
+          videoStats,
           costStats: {
             totalCost: Math.round(totalCost * 100) / 100,
             totalTokens,

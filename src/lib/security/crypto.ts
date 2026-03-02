@@ -51,6 +51,15 @@ export function timingSafeCompare(a: string, b: string): boolean {
 }
 
 /**
+ * 내부 API 시크릿 검증 (빈 문자열 방지 + timing-safe)
+ */
+export function validateInternalApiSecret(header: string | null): boolean {
+    const secret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
+    if (!secret || !header) return false;
+    return timingSafeCompare(header, secret);
+}
+
+/**
  * 에러 참조 ID 생성
  * - 사용자에게 표시하여 로그 추적에 사용
  */

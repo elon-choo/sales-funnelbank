@@ -9,20 +9,46 @@ import { createRefreshToken } from '@/lib/auth/rotation';
 import { generateAccessToken } from '@/lib/auth/tokens';
 import { LoginRequest, UserTier } from '@/types/auth';
 
-// 하드코딩된 어드민 계정 (백업용)
-const HARDCODED_ADMIN = {
-    email: 'admin@magneticsales.com',
-    password: 'Admin123!',
-    id: '2413c0d5-726c-4063-8225-68d318c8b447',
-    fullName: 'Admin',
-    tier: 'enterprise' as UserTier,
-    role: 'admin' as const,
-    isApproved: true,
-    createdAt: new Date().toISOString()
-};
+// In-memory rate limiter (IP 기반, 5회/10분)
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10분
+
+function checkRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip);
+    if (!entry || now > entry.resetAt) {
+        loginAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return true;
+    }
+    entry.count++;
+    if (entry.count > RATE_LIMIT_MAX) {
+        return false;
+    }
+    return true;
+}
+
+// 오래된 엔트리 정리 (5분마다)
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of loginAttempts) {
+        if (now > entry.resetAt) loginAttempts.delete(key);
+    }
+}, 5 * 60 * 1000);
 
 export async function POST(request: NextRequest) {
     try {
+        // Rate limiting
+        const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+                   request.headers.get('x-real-ip') ||
+                   'unknown';
+        if (!checkRateLimit(ip)) {
+            return NextResponse.json(
+                { success: false, error: { code: 'AUTH_010', message: '로그인 시도가 너무 많습니다. 10분 후 다시 시도해주세요.' } },
+                { status: 429 }
+            );
+        }
+
         let body: LoginRequest;
         try {
             body = await request.json();
@@ -39,37 +65,6 @@ export async function POST(request: NextRequest) {
                 { success: false, error: { code: 'AUTH_001', message: '이메일과 비밀번호를 입력해주세요.' } },
                 { status: 400 }
             );
-        }
-
-        // 하드코딩된 어드민 계정 체크 (백업용) - 실제 JWT 발급
-        if (email === HARDCODED_ADMIN.email && password === HARDCODED_ADMIN.password) {
-            const adminAccessToken = await generateAccessToken({
-                userId: HARDCODED_ADMIN.id,
-                email: HARDCODED_ADMIN.email,
-                tier: 'ENTERPRISE' as UserTier,
-                role: 'owner',
-            });
-            const response = NextResponse.json({
-                success: true,
-                data: {
-                    accessToken: adminAccessToken,
-                    expiresIn: 86400,
-                    user: {
-                        id: HARDCODED_ADMIN.id,
-                        email: HARDCODED_ADMIN.email,
-                        fullName: HARDCODED_ADMIN.fullName,
-                        tier: 'ENTERPRISE',
-                        role: 'owner',
-                        isApproved: HARDCODED_ADMIN.isApproved,
-                        createdAt: HARDCODED_ADMIN.createdAt
-                    }
-                }
-            });
-            response.cookies.set(COOKIE_CONFIG.REFRESH_TOKEN_NAME, 'admin_refresh_' + Date.now(), {
-                ...COOKIE_CONFIG.options,
-                maxAge: COOKIE_CONFIG.maxAge.REFRESH_TOKEN,
-            });
-            return response;
         }
 
         // Supabase Auth 로그인

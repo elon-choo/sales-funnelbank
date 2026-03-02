@@ -2,14 +2,12 @@
 // SMTP 이메일 발송 테스트 엔드포인트 (디버깅용)
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { validateInternalApiSecret } from '@/lib/security/crypto';
 
 export const runtime = 'nodejs';
 
-const INTERNAL_API_SECRET = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
-
 export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get('x-internal-secret');
-  if (authHeader !== INTERNAL_API_SECRET) {
+  if (!validateInternalApiSecret(request.headers.get('x-internal-secret'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

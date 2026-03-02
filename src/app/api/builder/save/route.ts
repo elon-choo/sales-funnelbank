@@ -3,8 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth/guards';
 import { createClient } from '@supabase/supabase-js';
 
-const HARDCODED_ADMIN_ID = '2413c0d5-726c-4063-8225-68d318c8b447';
-
 export async function POST(request: NextRequest) {
   try {
     // Auth check
@@ -23,20 +21,7 @@ export async function POST(request: NextRequest) {
     const id = crypto.randomUUID();
     const slug = generateSlug(plan.businessInfo?.name || 'landing-page');
 
-    // For hardcoded admin, just return success without DB save
-    if (auth.userId === HARDCODED_ADMIN_ID) {
-      // Generate full HTML
-      const html = generateFullHTML(plan);
-
-      return NextResponse.json({
-        id,
-        slug,
-        html,
-        message: 'Landing page saved (demo mode)',
-      });
-    }
-
-    // For real users, save to Supabase
+    // Save to Supabase
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

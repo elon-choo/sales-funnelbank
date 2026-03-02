@@ -2,12 +2,13 @@
 // 관리자: 사용자 역할 변경 API (user/premium/admin/owner)
 import { NextRequest, NextResponse } from 'next/server';
 import { withLmsAuth } from '@/lib/lms/guards';
+import { hasAdminRole, canPromoteTo } from '@/lib/auth/permissions';
 
 export async function PATCH(request: NextRequest) {
   return withLmsAuth(request, async (auth, supabase) => {
     try {
-      // Only admin/owner can change roles
-      if (auth.lmsRole !== 'admin' && auth.tier !== 'ENTERPRISE') {
+      // Admin 이상만 역할 변경 가능
+      if (!hasAdminRole(auth.role, auth.tier)) {
         return NextResponse.json(
           { success: false, error: { message: '관리자 권한이 필요합니다' } },
           { status: 403 }
@@ -31,17 +32,7 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      // Get current user's role to check permissions
-      const { data: currentUser } = await supabase
-        .from('profiles')
-        .select('role, tier')
-        .eq('id', auth.userId)
-        .single();
-
-      const isOwner = currentUser?.role === 'owner';
-      const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'owner';
-
-      // Get target user's current role
+      // 대상 사용자 조회
       const { data: targetUser, error: targetErr } = await supabase
         .from('profiles')
         .select('id, email, full_name, role, tier')
@@ -55,8 +46,7 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      // Permission checks
-      // 1. Can't change your own role
+      // 자기 자신 역할 변경 금지
       if (userId === auth.userId) {
         return NextResponse.json(
           { success: false, error: { message: '자신의 역할은 변경할 수 없습니다' } },
@@ -64,26 +54,11 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      // 2. Only owner can demote admin
-      if ((targetUser.role === 'admin' || targetUser.role === 'owner') && !isOwner) {
+      // 중앙화된 권한 검증 (permissions.ts)
+      const permCheck = canPromoteTo(auth.role, targetUser.role, newRole);
+      if (!permCheck.allowed) {
         return NextResponse.json(
-          { success: false, error: { message: 'Admin 역할 변경은 Owner만 가능합니다' } },
-          { status: 403 }
-        );
-      }
-
-      // 3. Only owner can promote to owner
-      if (newRole === 'owner' && !isOwner) {
-        return NextResponse.json(
-          { success: false, error: { message: 'Owner 지정은 현재 Owner만 가능합니다' } },
-          { status: 403 }
-        );
-      }
-
-      // 4. Non-owner admin can only set: user, premium, admin
-      if (!isOwner && newRole === 'owner') {
-        return NextResponse.json(
-          { success: false, error: { message: 'Owner 지정은 현재 Owner만 가능합니다' } },
+          { success: false, error: { message: permCheck.reason || '권한이 부족합니다' } },
           { status: 403 }
         );
       }

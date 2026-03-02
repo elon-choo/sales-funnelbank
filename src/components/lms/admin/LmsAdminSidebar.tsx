@@ -4,6 +4,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '@/stores/authStore';
 
 interface LmsAdminSidebarProps {
   isOpen: boolean;
@@ -38,6 +40,15 @@ const menuGroups = [
         ),
       },
       {
+        name: '회원 승인',
+        href: '/admin',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+      },
+      {
         name: '수강생 관리',
         href: '/lms-admin/enrollments',
         icon: (
@@ -55,6 +66,15 @@ const menuGroups = [
           </svg>
         ),
         badge: 'VOD',
+      },
+      {
+        name: '시청 현황',
+        href: '/lms-admin/video-progress',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+        ),
       },
       {
         name: '과제 관리',
@@ -126,8 +146,41 @@ const menuGroups = [
   },
 ];
 
+const DAILY_BUDGET = 40;
+
 export default function LmsAdminSidebar({ isOpen, onClose }: LmsAdminSidebarProps) {
   const pathname = usePathname();
+  const { accessToken } = useAuthStore();
+  const [dailyCost, setDailyCost] = useState<number | null>(null);
+  const [aiStatus, setAiStatus] = useState<'ok' | 'error' | 'loading'>('loading');
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const fetchDailyCost = async () => {
+      try {
+        const res = await fetch('/api/lms/admin/costs?period=7d', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error('fetch failed');
+        const json = await res.json();
+        if (json.success && json.data) {
+          const today = new Date().toISOString().slice(0, 10);
+          const todayEntry = json.data.dailyCosts?.find(
+            (d: { date: string; cost: number }) => d.date === today
+          );
+          setDailyCost(todayEntry?.cost ?? 0);
+          setAiStatus('ok');
+        } else {
+          setAiStatus('error');
+        }
+      } catch {
+        setAiStatus('error');
+      }
+    };
+    fetchDailyCost();
+    const interval = setInterval(fetchDailyCost, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [accessToken]);
 
   if (!isOpen) return null;
 
@@ -186,11 +239,25 @@ export default function LmsAdminSidebar({ isOpen, onClose }: LmsAdminSidebarProp
         <div className="p-4 border-t border-slate-800 mt-4">
           <div className="p-3 bg-slate-800/50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-xs text-slate-400">AI 서비스 정상</span>
+              <div className={`w-2 h-2 rounded-full ${
+                aiStatus === 'ok' ? 'bg-green-500' :
+                aiStatus === 'error' ? 'bg-red-500' :
+                'bg-yellow-500 animate-pulse'
+              }`}></div>
+              <span className="text-xs text-slate-400">
+                {aiStatus === 'ok' ? 'AI 서비스 정상' :
+                 aiStatus === 'error' ? 'AI 서비스 오류' :
+                 'AI 서비스 확인 중...'}
+              </span>
             </div>
             <div className="text-xs text-slate-500">
-              일일 비용: <span className="text-amber-400">$12.45</span> / $40
+              일일 비용: <span className={
+                dailyCost !== null && dailyCost > DAILY_BUDGET * 0.8
+                  ? 'text-red-400'
+                  : 'text-amber-400'
+              }>
+                {dailyCost !== null ? `$${dailyCost.toFixed(2)}` : '...'}
+              </span> / ${DAILY_BUDGET}
             </div>
           </div>
         </div>
