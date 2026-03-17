@@ -6,6 +6,11 @@
       "main": true
     }
   },
+  "functions": {
+    "src/app/api/lms/assignments/[assignmentId]/files/route.ts": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/process-feedback",

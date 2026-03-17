@@ -158,12 +158,18 @@ export default function AssignmentsPage() {
       if (!existing) {
         latestByWeekId.set(weekId, a);
       } else {
-        // Prefer feedback_ready > submitted > processing > draft, then latest version
-        const statusPriority = (s: string) =>
-          s === 'feedback_ready' ? 4 : s === 'submitted' ? 3 : s === 'processing' ? 2 : 1;
-        if (statusPriority(a.status) > statusPriority(existing.status) ||
-            (statusPriority(a.status) === statusPriority(existing.status) && a.version > existing.version)) {
+        // 최신 버전 우선 (재제출이 진행 중이면 그것을 보여줌)
+        // 단, draft는 submitted/feedback_ready보다 낮은 우선순위
+        const isDraft = (s: string) => s === 'draft';
+        if (isDraft(existing.status) && !isDraft(a.status)) {
           latestByWeekId.set(weekId, a);
+        } else if (!isDraft(existing.status) && isDraft(a.status)) {
+          // 기존이 submitted/feedback_ready이고 새 것이 draft면 기존 유지
+        } else {
+          // 둘 다 draft이거나 둘 다 non-draft이면 최신 버전 우선
+          if (a.version > existing.version) {
+            latestByWeekId.set(weekId, a);
+          }
         }
       }
     }

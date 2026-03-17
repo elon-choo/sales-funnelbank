@@ -2,9 +2,10 @@
 // Vercel Cron 핸들러: Fallback + Cleanup 전용
 // 5분마다 실행 - 주 처리는 /api/lms/feedback-processor에서 즉시 수행
 // 이 Cron은 다음 역할만 담당:
-// 1. 좀비 작업 복구 (5분 이상 processing 상태)
+// 1. 좀비 작업 복구 (10분 이상 processing 상태)
 // 2. 누락된 pending 작업 처리 (edge case 대응)
 // 3. 실패한 작업 재시도 트리거
+// 4. 고아 과제 복구 (submitted인데 feedback_job이 없는 과제 자동 감지)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -72,9 +73,11 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   // Cron 인증 확인
+  // Vercel Cron은 CRON_SECRET 환경변수로 Authorization: Bearer <secret> 헤더를 보냄
   const authHeader = request.headers.get('authorization');
   const cronSecret = request.headers.get('x-cron-secret');
-  const cronSecret_env = (process.env.CRON_SECRET_FEEDBACK || '').trim();
+  // CRON_SECRET (Vercel 표준) 또는 CRON_SECRET_FEEDBACK (레거시) 둘 다 지원
+  const cronSecret_env = (process.env.CRON_SECRET || process.env.CRON_SECRET_FEEDBACK || '').trim();
   const isValidCron = (cronSecret_env && cronSecret ? timingSafeCompare(cronSecret, cronSecret_env) : false) ||
                       (cronSecret_env && authHeader ? timingSafeCompare(authHeader, `Bearer ${cronSecret_env}`) : false);
 
@@ -92,30 +95,28 @@ export async function GET(request: NextRequest) {
     };
 
     // ============================================================
-    // 1. 좀비 작업 복구 (15분 이상 processing 상태)
-    // Opus 4.6 + 30K tokens는 7~12분 소요 → 15분 이상이면 진짜 좀비
+    // 1a. 좀비 작업 복구 (10분 이상 processing 상태)
+    // Opus 피드백 생성 평균 7~8분, 10분 넘으면 terminated 확정
     // ============================================================
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { data: zombieJobs } = await supabase
       .from('feedback_jobs')
       .select('id, attempts')
       .eq('status', 'processing')
-      .lt('started_at', fifteenMinutesAgo);
+      .lt('started_at', tenMinutesAgo);
 
     if (zombieJobs && zombieJobs.length > 0) {
       for (const zombie of zombieJobs) {
         if ((zombie.attempts || 0) >= 3) {
-          // 최대 재시도 초과: failed로 변경
           await supabase
             .from('feedback_jobs')
             .update({
               status: 'failed',
-              error_message: 'Zombie job: processing timeout (15min)',
+              error_message: 'Zombie job: processing timeout (10min), max retries exceeded',
               completed_at: new Date().toISOString(),
             })
             .eq('id', zombie.id);
         } else {
-          // 재시도 가능: pending으로 복구
           await supabase
             .from('feedback_jobs')
             .update({
@@ -128,6 +129,124 @@ export async function GET(request: NextRequest) {
         stats.recovered++;
       }
       console.log(`[Cron Fallback] Recovered ${stats.recovered} zombie jobs`);
+    }
+
+    // ============================================================
+    // 1b. terminated/overloaded 실패 작업 자동 리셋 (재시도 3회 미만)
+    // after()가 terminated 되면 자가 치유 체인도 죽으므로 Cron이 커버
+    // ============================================================
+    const { data: retriableJobs } = await supabase
+      .from('feedback_jobs')
+      .select('id, attempts, error_message')
+      .eq('status', 'failed')
+      .lt('attempts', 3)
+      .gt('created_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString());
+
+    if (retriableJobs && retriableJobs.length > 0) {
+      const autoRetriable = retriableJobs.filter(j => {
+        const err = j.error_message || '';
+        return err.includes('terminated') || err.includes('Overloaded') || err.includes('timeout')
+          || err.includes('corrupted') || err.includes('Stale');
+      });
+      for (const job of autoRetriable) {
+        await supabase
+          .from('feedback_jobs')
+          .update({
+            status: 'pending',
+            started_at: null,
+            completed_at: null,
+            error_message: `Auto-retry from: ${(job.error_message || '').substring(0, 50)}`,
+          })
+          .eq('id', job.id);
+        stats.recovered++;
+      }
+      if (autoRetriable.length > 0) {
+        console.log(`[Cron Fallback] Auto-retried ${autoRetriable.length} terminated/overloaded jobs`);
+      }
+    }
+
+    // ============================================================
+    // 1c. 고아 과제 복구: submitted 상태인데 active feedback_job이 없고
+    //     피드백도 없는 과제 → 자동으로 feedback_job 생성
+    //     (과제 제출 시 job INSERT 실패한 edge case 대응)
+    // ============================================================
+    const { data: orphanedAssignments } = await supabase
+      .rpc('find_orphaned_submitted_assignments');
+
+    // RPC가 없으면 직접 쿼리 (fallback)
+    let orphaned = orphanedAssignments;
+    if (!orphaned) {
+      // submitted 과제 중 active job도 없고 피드백도 없는 것
+      const { data: submittedAssignments } = await supabase
+        .from('assignments')
+        .select('id')
+        .eq('status', 'submitted')
+        .is('deleted_at', null);
+
+      if (submittedAssignments && submittedAssignments.length > 0) {
+        const orphanList: { id: string }[] = [];
+        for (const a of submittedAssignments) {
+          // active job 존재 확인
+          const { data: activeJob } = await supabase
+            .from('feedback_jobs')
+            .select('id')
+            .eq('assignment_id', a.id)
+            .in('status', ['pending', 'processing'])
+            .limit(1);
+
+          if (activeJob && activeJob.length > 0) continue;
+
+          // 피드백 존재 확인
+          const { data: existingFeedback } = await supabase
+            .from('feedbacks')
+            .select('id')
+            .eq('assignment_id', a.id)
+            .limit(1);
+
+          if (existingFeedback && existingFeedback.length > 0) {
+            // 피드백은 있는데 과제 상태가 submitted → feedback_ready로 수정
+            await supabase
+              .from('assignments')
+              .update({ status: 'feedback_ready' })
+              .eq('id', a.id);
+            continue;
+          }
+
+          orphanList.push(a);
+        }
+        orphaned = orphanList;
+      }
+    }
+
+    if (orphaned && orphaned.length > 0) {
+      let orphanCreated = 0;
+      for (const a of orphaned) {
+        // 기존 failed/cancelled job 삭제 (unique constraint 해결)
+        await supabase
+          .from('feedback_jobs')
+          .delete()
+          .eq('assignment_id', a.id)
+          .in('status', ['failed', 'cancelled']);
+
+        // 새 job 생성
+        const { error: insertError } = await supabase
+          .from('feedback_jobs')
+          .insert({
+            assignment_id: a.id,
+            status: 'pending',
+            worker_type: 'edge',
+            priority: 5,
+            metadata: { source: 'cron-orphan-recovery', recoveredAt: new Date().toISOString() },
+          });
+
+        if (!insertError) {
+          orphanCreated++;
+        }
+      }
+      if (orphanCreated > 0) {
+        stats.recovered += orphanCreated;
+        console.log(`[Cron Fallback] Created ${orphanCreated} jobs for orphaned submitted assignments`);
+      }
     }
 
     // ============================================================

@@ -162,6 +162,41 @@ export async function POST(request: NextRequest) {
           // 최종 실패
         }
       }
+
+      // ===== 자가 치유 체인: 완료 후 다음 pending job 자동 트리거 =====
+      try {
+        const { data: nextPending } = await supabase
+          .from('feedback_jobs')
+          .select('id')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single();
+
+        if (nextPending) {
+          const baseUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET || '').trim();
+
+          // 비동기로 다음 job 트리거 (5초 timeout - 202 받으면 충분)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          await fetch(`${baseUrl}/api/lms/feedback-processor`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-internal-secret': internalSecret,
+            },
+            body: JSON.stringify({ jobId: nextPending.id }),
+            signal: controller.signal,
+          }).catch(() => {});
+          clearTimeout(timeoutId);
+          console.log('[Processor Chain] Triggered next pending job:', nextPending.id);
+        }
+      } catch {
+        // 체인 실패해도 무시 - cron이 백업으로 처리
+      }
     });
 
     return NextResponse.json({
@@ -547,11 +582,63 @@ async function processFeedback(
       final_cta: 'B-8. 최종 CTA',
       social_proof: 'B-9. 사회적 증거/성공사례',
     };
-    const fieldLabels = weekNumber >= 4
-      ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2, ...fieldLabelsWeek4 }
-      : weekNumber >= 2
-        ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2 }
-        : fieldLabelsWeek1;
+    const fieldLabelsWeek5: Record<string, string> = {
+      landing_url_or_file: '랜딩페이지 URL/파일',
+      value_stack: '가치 스택 (온라인 클로징 1단계)',
+      anchoring_price: '앵커링 가격 제시 (2단계)',
+      barrier_removal: '구매 장벽 제거 + 구매 제한 (3-4단계)',
+      landing_readability: '가독성/레이아웃',
+      step1_objections: 'STEP 1. 거절 이유 20개',
+      step2_matrix: 'STEP 2. 대중성×임팩트 매트릭스',
+      step3_classification: 'STEP 3. 후킹 vs 클로징 거절 분류',
+      step4_placement: 'STEP 4. 배치 방법 (스토리/FAQ)',
+      step5_check: 'STEP 5. 최종 체크 (랜딩 반영)',
+      msg1_thanks: '문자1: 감사 문자',
+      msg2_value: '문자2: 가치 전달 문자',
+      msg3_case: '문자3: 사례/후기 문자',
+      msg4_remind: '문자4: 니즈 환기 문자',
+      msg5_offer: '문자5: 제안/마감 문자',
+      fb_page_url: 'FB 비즈니스 페이지 URL',
+      fb_page_info: 'FB 페이지 기본 정보',
+      optional_type: '선택 과제 유형',
+      optional_content: '선택 과제 내용',
+    };
+    const fieldLabelsWeek6: Record<string, string> = {
+      main_channel: '메인 채널 선택',
+      channel_reason: '선택 근거',
+      sub_channel: '서브 채널 재활용 계획',
+      floor1_discover: '1층: 콘텐츠 발견',
+      floor2_interest: '2층: 관심 유발',
+      floor3_trust: '3층: 신뢰 구축',
+      floor4_leadmagnet: '4층: 리드마그넷 전환',
+      floor5_nurture: '5층: 이메일/문자 육성',
+      floor6_close: '6층: 결제/상담',
+      cold_contents: 'Cold 유입 콘텐츠 (4개)',
+      cool_contents: 'Cool 유입 콘텐츠 (3개)',
+      warm_contents: 'Warm 유입 콘텐츠 (3개)',
+      nurture_1: '육성 콘텐츠 1',
+      nurture_2: '육성 콘텐츠 2',
+      nurture_3: '육성 콘텐츠 3',
+      leadmagnet_title: '리드마그넷 제목/형식',
+      leadmagnet_content: '리드마그넷 핵심 내용',
+      leadmagnet_delivery: '전달 방식',
+      msg_day1: 'Day 1: 감사 + 리드마그넷 전달',
+      msg_day2: 'Day 2: 가치 콘텐츠 1',
+      msg_day3: 'Day 3: 가치 콘텐츠 2',
+      msg_day4: 'Day 4: 성공 사례 1',
+      msg_day5: 'Day 5: 성공 사례 2 + 환기',
+      msg_day6: 'Day 6: 소프트 제안',
+      msg_day7: 'Day 7: 마감 제안',
+    };
+    const fieldLabels = weekNumber >= 6
+      ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2, ...fieldLabelsWeek4, ...fieldLabelsWeek5, ...fieldLabelsWeek6 }
+      : weekNumber >= 5
+        ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2, ...fieldLabelsWeek4, ...fieldLabelsWeek5 }
+        : weekNumber >= 4
+        ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2, ...fieldLabelsWeek4 }
+        : weekNumber >= 2
+          ? { ...fieldLabelsWeek1, ...fieldLabelsWeek2 }
+          : fieldLabelsWeek1;
 
     const excludeKeys = ['_submitMode', '_placeholder', 'submitMode', 'attachedFiles'];
     studentSubmission = Object.entries(content)
@@ -625,7 +712,104 @@ async function processFeedback(
 
   // 6. Claude API 호출 (주차별 피드백 형식)
   let feedbackFormat: string;
-  if (weekNumber >= 4) {
+  if (weekNumber >= 6) {
+    feedbackFormat = `## 피드백 형식
+피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 빠짐없이 작성하세요. 30,000자 이상 상세하게 작성하세요.
+시스템 프롬프트에 정의된 6회차 과제 구조(6파트)와 채점 기준(100점 만점)을 반드시 따르세요.
+
+# 세퍼마 5기 6회차 과제 피드백
+
+## 수강생: [이름]
+## 종합 점수: [X]/100
+
+### 핵심 진단 (한 문장 - "콘텐츠 1개 = 24시간 일하는 영업사원" 기준)
+### 과제별 점수 테이블 (과제1~6)
+### 강점 (Top 3)
+### 개선 필요 (Top 3)
+### 즉시 실행 액션 (D+3 이내)
+
+## 과제 1: 채널 선택 및 근거 (10점)
+### 1-1. 메인 채널 적합성 (업종×고객×강점 매칭)
+### 1-2. 선택 근거의 논리성
+### 1-3. 서브 채널 재활용 전략
+
+## 과제 2: 세일즈 에스컬레이터 설계 (20점)
+### 2-1. 6단계 흐름의 논리적 연결
+### 2-2. Cold→Hot 온도 상승 설계
+### 2-3. 각 층 CTA의 명확성
+
+## 과제 3: 유입용 콘텐츠 기획 (30점)
+### 3-1. 10개 콘텐츠의 온도별 배분 (Cold/Cool/Warm)
+### 3-2. 키워드 선정 + 제목 후킹력
+### 3-3. CTA의 에스컬레이터 연결
+
+## 과제 4: 육성용 콘텐츠 기획 (15점)
+### 4-1. 3개 콘텐츠의 Warm→Hot 전환력
+### 4-2. 리드마그넷 연결 CTA
+
+## 과제 5: 리드마그넷 기획 (10점)
+### 5-1. "돈 주고 살 만큼" 가치 수준
+### 5-2. 유료 상품 연결 자연스러움
+
+## 과제 6: 이메일/문자 퍼널 7통 (15점)
+### 6-1. 가치→사례→제안 순서 준수
+### 6-2. "팔지 않는 메시지" 원칙 (Day 1~5)
+### 6-3. Day 6~7 제안/마감의 긴급성
+
+## 종합 로드맵 + 마무리
+- 1~6회차 전체 퍼널 연결 점검
+- 핵심 레버리지 포인트
+- D+7 액션 플랜 (오늘/내일/D+3/D+5/D+7)
+- 엘런의 마무리 한마디
+- 핵심 금언 3개`;
+  } else if (weekNumber >= 5) {
+    feedbackFormat = `## 피드백 형식
+피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 빠짐없이 작성하세요. 30,000자 이상 상세하게 작성하세요.
+시스템 프롬프트에 정의된 5회차 과제 구조(5개 과제)와 채점 기준(100점 만점)을 반드시 따르세요.
+
+# 세퍼마 5기 5회차 과제 피드백
+
+## 수강생: [이름]
+## 종합 점수: [X]/100
+
+### 핵심 진단 (한 문장 - "사고 싶게 만들고 나서 제안한다" 원칙 기준)
+### 과제별 점수 테이블 (과제1~5)
+### 강점 (Top 3)
+### 개선 필요 (Top 3)
+### 즉시 실행 액션 (D+3 이내)
+
+## 과제 1: 세일즈 랜딩페이지 완성 (40점)
+### 1-1. 온라인 클로징 4단계 검증 (가치증폭→가격저항무력화→구매장벽제거→구매제한)
+### 1-2. 가치증폭 기법 분석 (보너스스택/사이드이펙트/가치나열+금액)
+### 1-3. 앵커링 효과 검증 (합산총액→실제가격 구조)
+### 1-4. 가독성/레이아웃 분석 (여백/글씨/색상/스크롤)
+### 1-5. 4주차 대비 발전도 + 양팔 저울 최종 검증
+
+## 과제 2: 선거절처리 워크시트 (25점)
+### 2-1. STEP 1 검증 (거절 20개의 구체성 - 카테고리 vs 고객 문장)
+### 2-2. STEP 2~3 검증 (매트릭스 분류 + 후킹/클로징 거절 분류)
+### 2-3. STEP 4~5 검증 (배치 방법 + 랜딩 반영 확인)
+### 2-4. 과제1 랜딩과의 교차 연결 분석
+
+## 과제 3: 퍼널 문자 기획서 (20점)
+### 3-1. 5단계 시퀀스 완성도 (감사→가치→사례→환기→제안)
+### 3-2. "팔지 않는 메시지" 원칙 검증 (문자1~4)
+### 3-3. 감정 곡선 + 발송 타이밍 설계
+### 3-4. 과제1 CTA와의 일관성
+
+## 과제 4: 페이스북 비즈니스 페이지 (5점)
+### 4-1. 생성 완료 + 기본 정보 검증
+
+## 과제 5: 선택과제 (10점, 제출 시)
+### 5-1. 구조적 설득 흐름 + 과제1과의 연결
+
+## 종합 로드맵 + 마무리
+- 핵심 레버리지 포인트
+- 과제 간 연결 구조 개선 방향
+- D+7 액션 플랜 (오늘/내일/D+3/D+5/D+7)
+- 엘런의 마무리 한마디
+- 핵심 금언 3개`;
+  } else if (weekNumber >= 4) {
     feedbackFormat = `## 피드백 형식
 피드백은 마크다운 형식으로 작성하세요. 반드시 아래 구조를 빠짐없이 작성하세요. 30,000자 이상 상세하게 작성하세요.
 

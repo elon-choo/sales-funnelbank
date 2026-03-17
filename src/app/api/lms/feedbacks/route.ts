@@ -1,7 +1,75 @@
 // src/app/api/lms/feedbacks/route.ts
 // 피드백 조회 API
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { withLmsAuth, withLmsAdminAuth } from '@/lib/lms/guards';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+// Stale job 자동 복구 (15분 이상 processing + pending 상태 job 트리거)
+async function recoverStaleJobs() {
+  try {
+    const adminSupabase = createAdminClient();
+
+    // 1. 15분 이상 processing 상태인 좀비 job → pending으로 복구
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: zombies } = await adminSupabase
+      .from('feedback_jobs')
+      .select('id, attempts')
+      .eq('status', 'processing')
+      .lt('started_at', tenMinAgo);
+
+    if (zombies && zombies.length > 0) {
+      for (const z of zombies) {
+        if ((z.attempts || 0) >= 3) {
+          await adminSupabase.from('feedback_jobs').update({
+            status: 'failed',
+            error_message: 'Auto-recovered: processing timeout (15min), max retries exceeded',
+            completed_at: new Date().toISOString(),
+          }).eq('id', z.id);
+        } else {
+          await adminSupabase.from('feedback_jobs').update({
+            status: 'pending',
+            started_at: null,
+            error_message: 'Auto-recovered: processing timeout (15min)',
+          }).eq('id', z.id);
+        }
+      }
+      console.log(`[Stale Recovery] Recovered ${zombies.length} zombie jobs`);
+    }
+
+    // 2. pending job이 있으면 프로세서 트리거
+    const { data: pendingJob } = await adminSupabase
+      .from('feedback_jobs')
+      .select('id')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (pendingJob) {
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const internalSecret = (process.env.INTERNAL_API_SECRET || process.env.CRON_SECRET || '').trim();
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      await fetch(`${baseUrl}/api/lms/feedback-processor`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-secret': internalSecret,
+        },
+        body: JSON.stringify({ jobId: pendingJob.id }),
+        signal: controller.signal,
+      }).catch(() => {});
+      clearTimeout(timeoutId);
+      console.log('[Stale Recovery] Triggered pending job:', pendingJob.id);
+    }
+  } catch (err) {
+    console.warn('[Stale Recovery] Error:', err);
+  }
+}
 
 // GET /api/lms/feedbacks - 피드백 목록 조회
 export async function GET(request: NextRequest) {
@@ -12,6 +80,9 @@ export async function GET(request: NextRequest) {
     const weekId = searchParams.get('weekId');
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+
+    // 피드백 조회 시 stale job 자동 복구 (after로 비동기 실행, 응답 지연 없음)
+    after(recoverStaleJobs);
 
     try {
       // 관리자: 전체 피드백 조회 가능

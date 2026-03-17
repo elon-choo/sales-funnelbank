@@ -267,10 +267,15 @@ export default function NewAssignmentPage() {
       return;
     }
 
-    const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx'];
+    const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx', 'hwp', 'hwpx'];
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     if (!allowedExtensions.includes(ext)) {
       setError(`지원하지 않는 파일 형식입니다. (${allowedExtensions.join(', ')})`);
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('파일 크기는 10MB를 초과할 수 없습니다.');
       return;
     }
 
@@ -322,21 +327,44 @@ export default function NewAssignmentPage() {
     setError(null);
 
     try {
-      const fd = new FormData();
-      fd.append('file', file);
+      // 2단계 업로드: 서명된 URL 발급 → Supabase Storage 직접 업로드
+      // (Vercel 4.5MB body limit 우회)
 
-      const res = await fetch(`/api/lms/assignments/${assignmentId}/files`, {
+      // Step 1: 서명된 업로드 URL 발급
+      const signRes = await fetch(`/api/lms/assignments/${assignmentId}/files`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: fd,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || 'application/octet-stream',
+        }),
       });
-      const result = await res.json();
+      const signResult = await signRes.json();
 
-      if (!res.ok || !result.success) {
-        throw new Error(result.error?.message || '파일 업로드 실패');
+      if (!signRes.ok || !signResult.success) {
+        throw new Error(signResult.error?.message || '업로드 URL 생성 실패');
       }
 
-      setUploadedFiles(prev => [...prev, result.data.file]);
+      // Step 2: Supabase Storage에 직접 업로드 (서명된 URL 사용)
+      const { signedUrl, token } = signResult.data;
+      const uploadRes = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          ...(token ? { 'x-upsert': 'false' } : {}),
+        },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`파일 업로드 실패 (${uploadRes.status})`);
+      }
+
+      setUploadedFiles(prev => [...prev, signResult.data.file]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '파일 업로드 중 오류가 발생했습니다.');
     } finally {
@@ -968,19 +996,19 @@ export default function NewAssignmentPage() {
               )}
 
               {uploadedFiles.length < 5 && (
-                <div>
+                <div className="relative">
+                  {/* 모바일 호환: input을 영역 위에 투명하게 겹침 (hidden + JS click 방식은 안드로이드 일부 브라우저에서 동작 안함) */}
                   <input
                     ref={fileInputRef}
                     type="file"
                     onChange={handleFileUpload}
-                    accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.txt,.md,.doc,.docx"
-                    className="hidden"
+                    accept="*/*"
+                    className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
                     disabled={uploading || submitting}
                     multiple
                   />
                   <div
-                    onClick={() => !uploading && !submitting && fileInputRef.current?.click()}
-                    className={`flex flex-col items-center justify-center gap-3 px-4 py-10 border-2 border-dashed rounded-xl transition-all cursor-pointer w-full ${
+                    className={`flex flex-col items-center justify-center gap-3 px-4 py-10 border-2 border-dashed rounded-xl transition-all w-full ${
                       isDragging
                         ? 'border-pink-500 bg-pink-500/10 text-pink-400 scale-[1.02]'
                         : uploading || submitting
@@ -1005,11 +1033,11 @@ export default function NewAssignmentPage() {
                         <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        <span className="text-sm font-medium">파일을 드래그하거나 클릭하여 선택</span>
+                        <span className="text-sm font-medium">탭하여 파일 선택</span>
                         <span className="text-xs text-slate-500">
                           {uploadedFiles.length > 0
                             ? `${uploadedFiles.length}/5개 첨부됨`
-                            : 'PDF, 이미지, Word, TXT 등'}
+                            : 'PDF, 이미지, Word, TXT 등 모든 파일'}
                         </span>
                       </>
                     )}

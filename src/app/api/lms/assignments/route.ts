@@ -227,21 +227,30 @@ export async function POST(request: NextRequest) {
 
       // 제출된 과제인 경우 피드백 작업 큐에 추가 + 즉시 처리 트리거
       if (!isDraft) {
-        // 1. 피드백 작업 큐에 추가
-        const { data: feedbackJob, error: jobError } = await supabase
-          .from('feedback_jobs')
-          .insert({
-            assignment_id: assignment.id,
-            status: 'pending',
-            worker_type: 'edge',
-          })
-          .select('id')
-          .single();
+        // 1. 피드백 작업 큐에 추가 (실패 시 1회 재시도)
+        let feedbackJob: { id: string } | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const { data, error: jobError } = await supabase
+            .from('feedback_jobs')
+            .insert({
+              assignment_id: assignment.id,
+              status: 'pending',
+              worker_type: 'edge',
+            })
+            .select('id')
+            .single();
 
-        if (jobError) {
-          console.error('[Feedback Job Create Error]', jobError);
-          // 과제는 저장되었으므로 경고만 로깅
+          if (!jobError && data) {
+            feedbackJob = data;
+            break;
+          }
+          console.error(`[Feedback Job Create Error] attempt ${attempt + 1}:`, jobError);
+          if (attempt === 0) {
+            // 첫 실패 시 기존 active job 충돌일 수 있음 → 잠시 대기 후 재시도
+            await new Promise(r => setTimeout(r, 500));
+          }
         }
+        // job 생성 실패해도 크론이 5분 내에 orphaned assignment를 감지하여 자동 복구
 
         // 2. 즉시 피드백 처리 트리거 (async after + 10초 timeout)
         // after() 콜백이 async여야 Vercel 런타임이 fetch 연결이 성립될 때까지 대기함

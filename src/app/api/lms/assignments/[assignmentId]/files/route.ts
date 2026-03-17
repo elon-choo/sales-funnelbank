@@ -1,21 +1,12 @@
 // src/app/api/lms/assignments/[assignmentId]/files/route.ts
-// 과제 첨부파일 API
+// 과제 첨부파일 API - 2단계 업로드 (서명 URL → 직접 업로드)
 import { NextRequest, NextResponse } from 'next/server';
 import { withLmsAuth } from '@/lib/lms/guards';
 
+export const maxDuration = 60;
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'text/plain',
-  'text/markdown',
-  'text/x-markdown',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-];
+const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx', 'hwp', 'hwpx'];
 
 // GET /api/lms/assignments/[assignmentId]/files - 첨부파일 목록 조회
 export async function GET(
@@ -26,7 +17,6 @@ export async function GET(
     const { assignmentId } = await params;
 
     try {
-      // 과제 소유권 확인
       const { data: assignment, error: assignmentError } = await supabase
         .from('assignments')
         .select('id, user_id')
@@ -40,7 +30,6 @@ export async function GET(
         );
       }
 
-      // 본인 과제인지 확인 (관리자는 모든 과제 접근 가능)
       const isAdmin = auth.role === 'admin' || auth.tier === 'ENTERPRISE';
       if (!isAdmin && assignment.user_id !== auth.userId) {
         return NextResponse.json(
@@ -49,7 +38,6 @@ export async function GET(
         );
       }
 
-      // 첨부파일 목록 조회
       const { data: files, error: filesError } = await supabase
         .from('assignment_files')
         .select('id, file_name, mime_type, file_size, file_path, created_at')
@@ -64,12 +52,11 @@ export async function GET(
         );
       }
 
-      // 각 파일의 서명된 URL 생성 (private bucket)
       const filesWithUrls = await Promise.all(
         (files || []).map(async (file) => {
           const { data } = await supabase.storage
             .from('assignment-files')
-            .createSignedUrl(file.file_path, 3600); // 1시간 유효
+            .createSignedUrl(file.file_path, 3600);
 
           return {
             id: file.id,
@@ -98,6 +85,9 @@ export async function GET(
 }
 
 // POST /api/lms/assignments/[assignmentId]/files - 파일 업로드
+// 2가지 모드 지원:
+// 1) mode=signedUrl: 서명된 업로드 URL 발급 (대용량 파일용, 클라이언트가 직접 Storage 업로드)
+// 2) 기본: FormData로 서버 경유 업로드 (4.5MB 이하 파일)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ assignmentId: string }> }
@@ -120,7 +110,6 @@ export async function POST(
         );
       }
 
-      // 본인 과제인지 확인
       if (assignment.user_id !== auth.userId) {
         return NextResponse.json(
           { success: false, error: { code: 'FORBIDDEN', message: '본인의 과제만 수정할 수 있습니다' } },
@@ -128,7 +117,6 @@ export async function POST(
         );
       }
 
-      // 이미 리뷰된 과제는 수정 불가
       if (assignment.status === 'reviewed') {
         return NextResponse.json(
           { success: false, error: { code: 'INVALID_STATUS', message: '리뷰된 과제는 수정할 수 없습니다' } },
@@ -136,36 +124,7 @@ export async function POST(
         );
       }
 
-      // FormData 파싱
-      const formData = await request.formData();
-      const file = formData.get('file') as File | null;
-
-      if (!file) {
-        return NextResponse.json(
-          { success: false, error: { code: 'VALIDATION_ERROR', message: '파일이 필요합니다' } },
-          { status: 400 }
-        );
-      }
-
-      // 파일 크기 확인
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { success: false, error: { code: 'FILE_TOO_LARGE', message: '파일 크기는 10MB를 초과할 수 없습니다' } },
-          { status: 400 }
-        );
-      }
-
-      // 파일 타입 확인 (확장자 기반 폴백 포함)
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'md', 'doc', 'docx'];
-      if (!ALLOWED_TYPES.includes(file.type) && !allowedExtensions.includes(ext || '')) {
-        return NextResponse.json(
-          { success: false, error: { code: 'INVALID_FILE_TYPE', message: '허용되지 않는 파일 형식입니다 (PDF, 이미지, Word, TXT, MD)' } },
-          { status: 400 }
-        );
-      }
-
-      // 기존 파일 개수 확인 (최대 5개)
+      // 기존 파일 개수 확인
       const { count } = await supabase
         .from('assignment_files')
         .select('id', { count: 'exact', head: true })
@@ -178,12 +137,127 @@ export async function POST(
         );
       }
 
-      // 고유 파일 경로 생성
+      // Content-Type으로 모드 분기
+      const contentType = request.headers.get('content-type') || '';
+
+      // === 모드 1: 서명된 업로드 URL 발급 (JSON 요청) ===
+      if (contentType.includes('application/json')) {
+        const body = await request.json();
+        const { fileName, fileSize, fileType } = body;
+
+        if (!fileName || !fileSize) {
+          return NextResponse.json(
+            { success: false, error: { code: 'VALIDATION_ERROR', message: 'fileName과 fileSize는 필수입니다' } },
+            { status: 400 }
+          );
+        }
+
+        // 파일 크기 확인
+        if (fileSize > MAX_FILE_SIZE) {
+          return NextResponse.json(
+            { success: false, error: { code: 'FILE_TOO_LARGE', message: '파일 크기는 10MB를 초과할 수 없습니다' } },
+            { status: 400 }
+          );
+        }
+
+        // 확장자 확인
+        const ext = fileName.split('.').pop()?.toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext || '')) {
+          return NextResponse.json(
+            { success: false, error: { code: 'INVALID_FILE_TYPE', message: '허용되지 않는 파일 형식입니다' } },
+            { status: 400 }
+          );
+        }
+
+        // Storage 경로 생성
+        const timestamp = Date.now();
+        const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const storagePath = `${auth.userId}/${assignmentId}/${timestamp}_${sanitizedFileName}`;
+
+        // 서명된 업로드 URL 생성
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from('assignment-files')
+          .createSignedUploadUrl(storagePath);
+
+        if (signedError || !signedData) {
+          console.error('[Signed URL Error]', signedError);
+          return NextResponse.json(
+            { success: false, error: { code: 'UPLOAD_ERROR', message: '업로드 URL 생성 실패' } },
+            { status: 500 }
+          );
+        }
+
+        // DB에 파일 레코드 미리 생성 (pending 상태)
+        const { data: fileRecord, error: dbError } = await supabase
+          .from('assignment_files')
+          .insert({
+            assignment_id: assignmentId,
+            file_name: fileName,
+            mime_type: fileType || 'application/octet-stream',
+            file_size: fileSize,
+            file_path: storagePath,
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          console.error('[File DB Error]', dbError);
+          return NextResponse.json(
+            { success: false, error: { code: 'DB_ERROR', message: '파일 정보 저장 실패' } },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            mode: 'signedUrl',
+            signedUrl: signedData.signedUrl,
+            token: signedData.token,
+            storagePath,
+            file: {
+              id: fileRecord.id,
+              file_name: fileRecord.file_name,
+              file_type: fileRecord.mime_type,
+              file_size: fileRecord.file_size,
+              storage_path: storagePath,
+              created_at: fileRecord.created_at,
+              url: '', // 업로드 완료 후 GET으로 조회
+            },
+          },
+        }, { status: 201 });
+      }
+
+      // === 모드 2: 기존 FormData 업로드 (4.5MB 이하) ===
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+
+      if (!file) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: '파일이 필요합니다' } },
+          { status: 400 }
+        );
+      }
+
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FILE_TOO_LARGE', message: '파일 크기는 10MB를 초과할 수 없습니다' } },
+          { status: 400 }
+        );
+      }
+
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext || '')) {
+        return NextResponse.json(
+          { success: false, error: { code: 'INVALID_FILE_TYPE', message: '허용되지 않는 파일 형식입니다' } },
+          { status: 400 }
+        );
+      }
+
       const timestamp = Date.now();
       const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const storagePath = `${auth.userId}/${assignmentId}/${timestamp}_${sanitizedFileName}`;
 
-      // Supabase Storage에 업로드
       const arrayBuffer = await file.arrayBuffer();
       const { error: uploadError } = await supabase.storage
         .from('assignment-files')
@@ -200,7 +274,6 @@ export async function POST(
         );
       }
 
-      // DB에 파일 정보 저장 (DB 컬럼명: file_path, mime_type)
       const { data: fileRecord, error: dbError } = await supabase
         .from('assignment_files')
         .insert({
@@ -214,9 +287,7 @@ export async function POST(
         .single();
 
       if (dbError) {
-        // 업로드된 파일 롤백
         await supabase.storage.from('assignment-files').remove([storagePath]);
-
         console.error('[File DB Error]', dbError);
         return NextResponse.json(
           { success: false, error: { code: 'DB_ERROR', message: '파일 정보 저장 실패' } },
@@ -224,7 +295,6 @@ export async function POST(
         );
       }
 
-      // 서명된 URL 생성 (private bucket)
       const { data: urlData } = await supabase.storage
         .from('assignment-files')
         .createSignedUrl(storagePath, 3600);
@@ -275,7 +345,6 @@ export async function DELETE(
         );
       }
 
-      // 파일 정보 조회
       const { data: fileRecord, error: fileError } = await supabase
         .from('assignment_files')
         .select(`
@@ -298,36 +367,24 @@ export async function DELETE(
         );
       }
 
-      // 과제 정보 추출
-      const assignment = fileRecord.assignments as unknown as { user_id: string; status: string };
+      const assignmentData = fileRecord.assignments as unknown as { user_id: string; status: string };
 
-      // 본인 과제인지 확인
-      if (assignment.user_id !== auth.userId) {
+      if (assignmentData.user_id !== auth.userId) {
         return NextResponse.json(
           { success: false, error: { code: 'FORBIDDEN', message: '본인의 파일만 삭제할 수 있습니다' } },
           { status: 403 }
         );
       }
 
-      // 이미 리뷰된 과제의 파일은 삭제 불가
-      if (assignment.status === 'reviewed') {
+      if (assignmentData.status === 'reviewed') {
         return NextResponse.json(
           { success: false, error: { code: 'INVALID_STATUS', message: '리뷰된 과제의 파일은 삭제할 수 없습니다' } },
           { status: 400 }
         );
       }
 
-      // Storage에서 파일 삭제
-      const { error: storageError } = await supabase.storage
-        .from('assignment-files')
-        .remove([fileRecord.file_path]);
+      await supabase.storage.from('assignment-files').remove([fileRecord.file_path]);
 
-      if (storageError) {
-        console.error('[File Storage Delete Error]', storageError);
-        // Storage 삭제 실패해도 DB는 삭제 진행
-      }
-
-      // DB에서 파일 레코드 삭제
       const { error: dbError } = await supabase
         .from('assignment_files')
         .delete()
